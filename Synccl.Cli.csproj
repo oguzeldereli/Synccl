@@ -1,0 +1,56 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<OutputType>Exe</OutputType>
+		<TargetFramework>net9.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+
+		<!-- Use generic modern RIDs -->
+		<RuntimeIdentifiers>win-x64;win-arm64;linux-x64;osx-x64;osx-arm64</RuntimeIdentifiers>
+
+		<AssemblyName>synccl</AssemblyName>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.TSS" Version="2.1.1" />
+		<PackageReference Include="Spectre.Console.Cli" Version="0.53.0" />
+		<PackageReference Include="YamlDotNet" Version="16.3.0" />
+	</ItemGroup>
+
+	<!-- WINDOWS (matches ANY Windows RID) -->
+	<ItemGroup Condition="$(RuntimeIdentifier.Contains('win'))">
+		<Compile Include="Keychain/WindowsKeychain.cs" />
+	</ItemGroup>
+
+	<!-- LINUX (matches ANY Linux RID) -->
+	<ItemGroup Condition="$(RuntimeIdentifier.Contains('linux'))">
+		<Compile Include="Keychain/LinuxKeychain.cs" />
+	</ItemGroup>
+
+	<!-- MACOS (matches both x64 + arm64) -->
+	<ItemGroup Condition="$(RuntimeIdentifier.Contains('osx'))">
+		<Compile Include="Keychain/MacKeychain.cs" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Synccl.Core\Synccl.Core.csproj" />
+	</ItemGroup>
+
+	<!-- Shared embedded resources -->
+	<ItemGroup>
+		<EmbeddedResource Include="Templates/default-synccl.yaml" />
+		<EmbeddedResource Include="Templates/default-env.example" />
+	</ItemGroup>
+
+	<!-- Include native macOS Secure Enclave bridge when building for macOS -->
+	<ItemGroup Condition="$(RuntimeIdentifier.Contains('osx'))">
+		<NativeLibrary Include="runtimes/$(RuntimeIdentifier)/native/libSecureEnclaveBridge.dylib" />
+		<None Update="runtimes/$(RuntimeIdentifier)/native/libSecureEnclaveBridge.dylib">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+			<Pack>true</Pack>
+		</None>
+	</ItemGroup>
+
+</Project>
