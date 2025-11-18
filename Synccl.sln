@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36623.8 d17.14
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synccl.Cli", "Synccl\Synccl.Cli.csproj", "{23C82B16-9D44-40FB-8630-0D3063BEBBE3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Synccl.Core", "Synccl.Core\Synccl.Core.csproj", "{752EC361-5962-46BD-8E28-994358E6BA78}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{23C82B16-9D44-40FB-8630-0D3063BEBBE3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{23C82B16-9D44-40FB-8630-0D3063BEBBE3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{23C82B16-9D44-40FB-8630-0D3063BEBBE3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{23C82B16-9D44-40FB-8630-0D3063BEBBE3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{752EC361-5962-46BD-8E28-994358E6BA78}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{752EC361-5962-46BD-8E28-994358E6BA78}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{752EC361-5962-46BD-8E28-994358E6BA78}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{752EC361-5962-46BD-8E28-994358E6BA78}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8FEC3A8E-9113-4B94-B5F6-5E2E18037C41}
+	EndGlobalSection
+EndGlobal
