@@ -7,12 +7,13 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using static Synccl.Core.Vault.KeyWrap;
 
 namespace Synccl.Core.Vault
 {
     public class VaultKeyWrapper
     {
-        public static KeyWrap WrapForDevice(Guid deviceId, byte[] devicePubKey, byte[] key, Guid keyId, int version)
+        public static KeyWrap WrapForDevice(Guid deviceId, byte[] devicePubKey, byte[] key, KeyType type, Guid keyId, int version)
         {
             byte[] wrapped = Envelope.WrapDekWithX25519(key, devicePubKey);
 
@@ -22,13 +23,13 @@ namespace Synccl.Core.Vault
                 DevicePublicKeyForWrap = devicePubKey,
                 KeyId = keyId,
                 KeyVersion = version,
-                Type = KeyWrap.KeyType.Vault,
+                Type = type,
                 WrappedKey = wrapped,
                 WrapAlgorithm = "x25519-xchacha20"
             };
         }
 
-        public static KeyWrap EncryptAndWrapForDevice(Guid deviceId, byte[] devicePubKey, byte[] encryptionKey, byte[] key, byte[] aad, Guid keyId, int version)
+        public static KeyWrap EncryptAndWrapForDevice(Guid deviceId, byte[] devicePubKey, byte[] encryptionKey, byte[] key, byte[] aad, KeyType type, Guid keyId, int version)
         {
             var nonce = SodiumCore.GetRandomBytes(24);
             var encNK = SecretAeadXChaCha20Poly1305.Encrypt(key, nonce, encryptionKey, aad);
@@ -45,7 +46,7 @@ namespace Synccl.Core.Vault
                 DevicePublicKeyForWrap = devicePubKey,
                 KeyId = keyId,
                 KeyVersion = version,
-                Type = KeyWrap.KeyType.Namespace,
+                Type = type,
                 WrappedKey = wrapped,
                 WrapAlgorithm = "x25519+vk"
             };

@@ -99,7 +99,7 @@ namespace Synccl.Cli.Composition
             var keychain = CreateKeychain(root, keyWrapper);
             var deviceKeys = new DeviceKeyService(keychain);
             var deviceManager = new DeviceManager(root, keychain);
-            var keyManager = new CurrentDeviceVaultKeyManager(deviceManager, deviceKeys.GetOrCreate);
+            var keyManager = new DeviceVaultKeyManager(deviceManager, deviceKeys.GetOrCreate);
             var cryptoEngine = new VaultCryptoEngine();
 
             return new VaultService(vaultPath, deviceManager, keyManager, cryptoEngine);

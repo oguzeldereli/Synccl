@@ -2,7 +2,6 @@
 using Sodium;
 using Synccl.Core.Errors;
 using Synccl.Core.Keys;
-using Synccl.Core.Vault;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,7 +42,18 @@ namespace Synccl.Core.Device
             return null;
         }
 
-        public Vault.Device GetOrCreateCurrentDevice()
+        public Device? GetDevice(Guid deviceId)
+        {
+            var devices = GetDevices();
+            if (devices == null)
+            {
+                return null;
+            }
+            var device = devices.DeviceList.FirstOrDefault(d => d.DeviceId == deviceId);
+            return device;
+        }
+
+        public Device GetOrCreateCurrentDevice()
         {
             var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
             if (File.Exists(currentDevicePath))
@@ -65,7 +75,7 @@ namespace Synccl.Core.Device
             }
 
             var keyPair = PublicKeyBox.GenerateKeyPair();
-            var device = new Vault.Device
+            var device = new Device
             {
                 DeviceId = Guid.NewGuid(),
                 UserId = Guid.NewGuid(),
@@ -76,7 +86,7 @@ namespace Synccl.Core.Device
             var devices = new Devices
             {
                 CurrentDeviceId = device.DeviceId,
-                DeviceList = new List<Vault.Device> { device }
+                DeviceList = new List<Device> { device }
             };
 
             var newJson = JsonSerializer.Serialize(devices);
@@ -90,7 +100,7 @@ namespace Synccl.Core.Device
             return device;
         }
 
-        public bool SaveDevice(Vault.Device device)
+        public bool AddOrSaveDevice(Device device)
         {
             var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
             Devices devices;
@@ -103,12 +113,12 @@ namespace Synccl.Core.Device
                 }
                 catch
                 {
-                    devices = new Devices();
+                    return false;
                 }
             }
             else
             {
-                devices = new Devices();
+                return false;
             }
 
             var existingDevice = devices.DeviceList.FirstOrDefault(d => d.DeviceId == device.DeviceId);

@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Synccl.Core.Vault
+namespace Synccl.Core.Device
 {
     public class Devices
     {   

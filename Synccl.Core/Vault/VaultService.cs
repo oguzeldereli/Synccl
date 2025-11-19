@@ -1,7 +1,6 @@
 ﻿using Spectre.Console;
 using Synccl.Core.Device;
 using Synccl.Core.Errors;
-using Synccl.Core.Vault;
 using Synccl.Core.VaultCrypto;
 using System;
 using System.Collections.Generic;
@@ -20,10 +19,10 @@ namespace Synccl.Core.Vault
         private readonly string _vaultFile;
         private readonly string _vaultIdFile;
         private readonly DeviceManager _deviceManager;
-        private readonly CurrentDeviceVaultKeyManager _keyManager;
+        private readonly DeviceVaultKeyManager _keyManager;
         private readonly VaultCryptoEngine _crypto;
 
-        public VaultService(string vaultDir, DeviceManager deviceManager, CurrentDeviceVaultKeyManager keyManager, VaultCryptoEngine crypto)
+        public VaultService(string vaultDir, DeviceManager deviceManager, DeviceVaultKeyManager keyManager, VaultCryptoEngine crypto)
         {
             _vaultDir = vaultDir;
             _vaultFile = Path.Combine(vaultDir, "secrets.json");
