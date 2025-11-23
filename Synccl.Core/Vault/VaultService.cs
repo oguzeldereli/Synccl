@@ -2,13 +2,8 @@
 using Synccl.Core.Device;
 using Synccl.Core.Errors;
 using Synccl.Core.VaultCrypto;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
 using System.Text.Json;
-using System.Xml.Linq;
 using static Synccl.Core.Vault.KeyWrap;
 
 namespace Synccl.Core.Vault
@@ -17,7 +12,6 @@ namespace Synccl.Core.Vault
     {
         private readonly string _vaultDir;
         private readonly string _vaultFile;
-        private readonly string _vaultIdFile;
         private readonly DeviceManager _deviceManager;
         private readonly DeviceVaultKeyManager _keyManager;
         private readonly VaultCryptoEngine _crypto;
@@ -26,7 +20,6 @@ namespace Synccl.Core.Vault
         {
             _vaultDir = vaultDir;
             _vaultFile = Path.Combine(vaultDir, "secrets.json");
-            _vaultIdFile = Path.Combine(vaultDir, "id");
             _deviceManager = deviceManager;
             _keyManager = keyManager;
             _crypto = crypto;
@@ -36,15 +29,10 @@ namespace Synccl.Core.Vault
         // Lifecycle
         // ---------------------------------------------------------------------
 
-        public ServiceResponse<VaultModel> InitVault()
+        public ServiceResponse<VaultModel> InitVault(Guid vaultId)
         {
             if (File.Exists(_vaultFile))
                 return ServiceResponse<VaultModel>.Fail("Vault already exists here.");
-
-            if (!File.Exists(_vaultIdFile))
-                return ServiceResponse<VaultModel>.Fail("Vault ID file is missing.");
-
-            var vaultId = Guid.Parse(File.ReadAllText(_vaultIdFile).Trim());
 
             var vault = new VaultModel
             {
@@ -62,10 +50,10 @@ namespace Synccl.Core.Vault
             vkWrap.Type = KeyWrap.KeyType.Vault;
             vault.WrappedVaultKeys.Add(vkWrap);
 
-            // 🟢 Save vault WITH VK before creating namespaces
+            _deviceManager.AddOrUpdateVaultEncryptionKey(vault.Name, vkWrap.DevicePublicKeyForWrap);
+
             Save(vault);
 
-            // --- Create default namespace (creates NK and wraps for this device) ---
             var nsCreationResult = CreateNamespace(vault, "default");
             if (!nsCreationResult.Success)
                 return ServiceResponse<VaultModel>.Fail("Failed to create default namespace.");
@@ -151,6 +139,7 @@ namespace Synccl.Core.Vault
             var newNkWrap = _keyManager.WrapNKWithVKAndDK(vault.Name, ns.Name, newNk, vkForWrap, nkId, version: 1);
             newNkWrap.Type = KeyType.Namespace;
             ns.WrappedNamespaceKeys.Add(newNkWrap);
+            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vault.Name, ns.Name, newNkWrap.DevicePublicKeyForWrap);
 
             return newNk;
         }
@@ -189,6 +178,7 @@ namespace Synccl.Core.Vault
 
             secret.WrappedItemKeys.RemoveAll(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Item);
             secret.WrappedItemKeys.Add(wrap);
+            _deviceManager.AddOrUpdateItemEncryptionKey(vault.Name, ns.Name, secret.Key, wrap.DevicePublicKeyForWrap);
         }
 
         // ---------------------------------------------------------------------
@@ -215,8 +205,8 @@ namespace Synccl.Core.Vault
             nkWrap.Type = KeyType.Namespace;
 
             ns.WrappedNamespaceKeys.Add(nkWrap);
-
             vault.Namespaces.Add(ns);
+            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vault.Name, namespaceName, nkWrap.DevicePublicKeyForWrap);
 
             return ServiceResponse.Ok();
         }
@@ -383,5 +373,9 @@ namespace Synccl.Core.Vault
 
             return ServiceResponse.Ok();
         }
+
+        // ---------------------------------------------------------------------
+        // Device Management
+        // ---------------------------------------------------------------------
     }
 }

@@ -7,10 +7,12 @@ using Synccl.Core.Keys;
 using Synccl.Core.Vault;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using YamlDotNet.Serialization;
 
 namespace Synccl.Cli.Commands
 {
@@ -23,30 +25,35 @@ namespace Synccl.Cli.Commands
             var abortCheckResult = AbortChecks(path);
             if (abortCheckResult != 0)
             {
+                CleanupOnFail(path);
                 return abortCheckResult;
             }
 
             var vaultResult = InitializeVault(path);
             if (vaultResult != 0)
             {
+                CleanupOnFail(path);
                 return vaultResult;
             }
 
             var configResult = InitializeConfig(path);
             if (configResult != 0)
             {
+                CleanupOnFail(path);
                 return configResult;
             }
 
             var exampleEnvResult = InitializeExampleEnvironmentFile(path);
             if (exampleEnvResult != 0)
             {
+                CleanupOnFail(path);
                 return exampleEnvResult;
             }
 
             var gitignoreResult = AddEntriesToGitignore(path);
             if (gitignoreResult != 0)
             {
+                CleanupOnFail(path);
                 return gitignoreResult;
             }
 
@@ -89,7 +96,6 @@ namespace Synccl.Cli.Commands
             var syncclDir = Path.Combine(path, ".synccl");
             var syncclKeysDir = Path.Combine(syncclDir, "Keys");
             var syncclDevicesDir = Path.Combine(syncclDir, "Devices");
-            var vaultIdPath = Path.Combine(syncclDir, "id");
 
             if (!Directory.Exists(syncclDir))
             {
@@ -108,18 +114,16 @@ namespace Synccl.Cli.Commands
                 Directory.CreateDirectory(syncclKeysDir);
             }
 
-            if (File.Exists(vaultIdPath))
+            if (File.Exists(Path.Combine(syncclDir, "secrets.json")))
             {
                 AnsiConsole.MarkupLine("[red]Vault already exists in this directory.[/]");
                 AnsiConsole.MarkupLine("Run: [yellow]synccl destroy[/] first if you want to reset.");
-                return -1;
+                return 1;
             }
 
-            var vaultId = Guid.NewGuid().ToString("D");
-            File.WriteAllText(vaultIdPath, vaultId);
-
+            var vaultId = Guid.NewGuid();
             var service = ServiceFactory.CreateVaultService(path);
-            var vaultResult = service.InitVault();
+            var vaultResult = service.InitVault(vaultId);
             if (vaultResult.IsFailure)
             {
                 AnsiConsole.MarkupLine(vaultResult.ErrorMessage!);
@@ -137,8 +141,6 @@ namespace Synccl.Cli.Commands
             AnsiConsole.MarkupLine($"[green]✔[/] Vault initialized with ID [blue]{vaultId}[/]");
             return 0;
         }
-
-
 
         private int InitializeConfig(string path)
         {
@@ -261,6 +263,30 @@ namespace Synccl.Cli.Commands
             using var reader = new StreamReader(filePath, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
             reader.Peek(); 
             return reader.CurrentEncoding;
+        }
+
+        private void CleanupOnFail(string path)
+        {
+            var signer = ServiceFactory.GetSecureSigner(path);
+            var wrapper = ServiceFactory.GetSecureKeyWrapper(path);
+
+            wrapper.DeleteStorageParent();
+            signer.DeleteSigningKey();
+            signer.DeleteStorageParent();
+
+            var dirPath = Path.Combine(path, ".synccl");
+            if (Directory.Exists(dirPath))
+            {
+                Directory.Delete(dirPath, true);
+            }
+
+            var cfgPath = Path.Combine(path, "synccl.yaml");
+            if (File.Exists(cfgPath))
+            {
+                File.Delete(cfgPath);
+            }
+
+            AnsiConsole.MarkupLine("[green]- Cleaned up failed init[/]");
         }
     }
 }

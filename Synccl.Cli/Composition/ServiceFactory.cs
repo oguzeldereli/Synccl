@@ -3,10 +3,12 @@ using Synccl.Cli.Config;
 using Synccl.Cli.Helpers;
 using Synccl.Cli.KeyWrapper;
 using Synccl.Cli.Platform;
+using Synccl.Cli.Signer;
 using Synccl.Core.Crypto;
 using Synccl.Core.Device;
 using Synccl.Core.Keys;
 using Synccl.Core.Remote;
+using Synccl.Core.Security;
 using Synccl.Core.Vault;
 using Synccl.Core.VaultCrypto;
 using System;
@@ -86,19 +88,15 @@ namespace Synccl.Cli.Composition
         public static IVaultService CreateVaultService(string root)
         {
             var vaultPath = Path.Combine(root, ".synccl");
-            var account = VaultAccountIdHelper.GetAccountId(root);
-            if (account == null)
-            {
-                throw new InvalidOperationException("[red]Error:[/] Could not determine vault account ID. Is Synccl initialized?");
-            }
 
             ISecureKeyWrapper? keyWrapper = null;
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
                 keyWrapper = GetSecureKeyWrapper(root);
 
+            var secureSigner = GetSecureSigner(root);
             var keychain = CreateKeychain(root, keyWrapper);
             var deviceKeys = new DeviceKeyService(keychain);
-            var deviceManager = new DeviceManager(root, keychain);
+            var deviceManager = new DeviceManager(root, keychain, secureSigner);
             var keyManager = new DeviceVaultKeyManager(deviceManager, deviceKeys.GetOrCreate);
             var cryptoEngine = new VaultCryptoEngine();
 
@@ -131,6 +129,17 @@ namespace Synccl.Cli.Composition
                 throw new PlatformNotSupportedException("MacOS is not yet supported for Synccl keychain integration");
 
             throw new PlatformNotSupportedException("Unsupported OS for Synccl keychain integration");
+        }
+
+        public static ISecureSigner GetSecureSigner(string root)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                return new WindowsLinuxTPMSigner(root);
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                throw new PlatformNotSupportedException("MacOS is not yet supported for Synccl secure signer integration");
+
+            throw new PlatformNotSupportedException("Unsupported OS for Synccl secure signer integration");
         }
     }
 }

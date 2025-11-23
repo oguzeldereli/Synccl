@@ -14,7 +14,7 @@ namespace Synccl.Core.Vault
 {
     public interface IVaultService
     {
-        public ServiceResponse<VaultModel> InitVault();
+        public ServiceResponse<VaultModel> InitVault(Guid vaultId);
         public ServiceResponse<VaultModel> LoadVault();
         public ServiceResponse<VaultModel> TryLoadVault();
         public ServiceResponse Save(VaultModel vault);

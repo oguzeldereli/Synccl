@@ -128,7 +128,7 @@ namespace Synccl.Core.Device
                 throw new InvalidOperationException("Target device not found.");
             }
 
-            var pub = _deviceManager.GetDevicePubKey(vault.Name, deviceId);
+            var pub = _deviceManager.GetDeviceVaultPubKey(vault.Name, deviceId);
             if (pub == null || pub.Length == 0)
             {
                 throw new InvalidOperationException("Target device does not have a valid vault encryption public key.");
@@ -165,7 +165,7 @@ namespace Synccl.Core.Device
                 throw new InvalidOperationException("Target device not found.");
             }
 
-            var pub = _deviceManager.GetDevicePubKey(vault.Name, nsName, deviceId);
+            var pub = _deviceManager.GetDeviceNamespacePubKey(vault.Name, nsName, deviceId);
             if (pub == null || pub.Length == 0)
             {
                 throw new InvalidOperationException("Target device does not have a valid vault encryption public key.");
@@ -212,7 +212,7 @@ namespace Synccl.Core.Device
                 throw new InvalidOperationException("Target device not found.");
             }
 
-            var pub = _deviceManager.GetDevicePubKey(vault.Name, nsName, itemKey, deviceId);
+            var pub = _deviceManager.GetDeviceItemPubKey(vault.Name, nsName, itemKey, deviceId);
             if (pub == null || pub.Length == 0)
             {
                 throw new InvalidOperationException("Target device does not have a valid vault encryption public key.");

@@ -8,7 +8,6 @@ namespace Synccl.Core.Device
 {
     public class Devices
     {   
-        public Guid CurrentDeviceId { get; set; }
         public List<Device> DeviceList { get; set; } = new();
     }
 

@@ -102,7 +102,7 @@ namespace Synccl.Cli.Platform
 
         private static string GetPath(string root, string account)
         {
-            var baseDir = Path.Combine(root, ".synccl", "keys");
+            var baseDir = Path.Combine(root, ".synccl", "Keys");
             var safe = Convert.ToBase64String(Encoding.UTF8.GetBytes(account))
                            .Replace('/', '_')
                            .Replace('+', '-');

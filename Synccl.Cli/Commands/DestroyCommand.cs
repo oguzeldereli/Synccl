@@ -30,23 +30,12 @@ namespace Synccl.Cli.Commands
                 }
             }
 
+            var signer = ServiceFactory.GetSecureSigner(path);
             var wrapper = ServiceFactory.GetSecureKeyWrapper(path);
 
-            var keychain = ServiceFactory.CreateKeychain(path, wrapper);
-
-            var accountId = VaultAccountIdHelper.GetAccountId(path);
-            if (accountId == null)
-            {
-                AnsiConsole.MarkupLine("[yellow]![/] Could not determine account ID for keychain entry");
-                AnsiConsole.MarkupLine("[yellow]![/] Keychain entry not removed");
-            }
-            else
-            {
-                keychain.TryDeleteKey(accountId);
-                AnsiConsole.MarkupLine("[green]-[/] Removed keychain entry");
-            }
-
             wrapper.DeleteStorageParent();
+            signer.DeleteSigningKey();
+            signer.DeleteStorageParent();
 
             var dirPath = Path.Combine(path, ".synccl");
             if (Directory.Exists(dirPath))
