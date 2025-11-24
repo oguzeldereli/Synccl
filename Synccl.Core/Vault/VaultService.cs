@@ -37,8 +37,6 @@ namespace Synccl.Core.Vault
             var vault = new VaultModel
             {
                 Id = vaultId,
-                Name = "default",
-                fileName = Path.GetFileName(_vaultFile),
                 Namespaces = new(),
                 WrappedVaultKeys = new()
             };
@@ -46,11 +44,11 @@ namespace Synccl.Core.Vault
             // --- Create VK ---
             var vk = _keyManager.GenerateSymmetricKey();
             var vkId = Guid.NewGuid();
-            var vkWrap = _keyManager.WrapVKWithDK(vault.Name, vk, vkId, version: 1);
+            var vkWrap = _keyManager.WrapVKWithDK(vk, vkId, version: 1);
             vkWrap.Type = KeyWrap.KeyType.Vault;
             vault.WrappedVaultKeys.Add(vkWrap);
 
-            _deviceManager.AddOrUpdateVaultEncryptionKey(vault.Name, vkWrap.DevicePublicKeyForWrap);
+            _deviceManager.AddOrUpdateVaultEncryptionKey(vk, vkWrap.DevicePublicKeyForWrap);
 
             Save(vault);
 
@@ -72,8 +70,8 @@ namespace Synccl.Core.Vault
             if (vault == null)
                 return ServiceResponse<VaultModel>.Fail("Invalid vault file.");
 
-            var currentDevice = _deviceManager.GetOrCreateCurrentDevice();
-            var deviceAuthorized = vault.WrappedVaultKeys.Any(x => x.DeviceId == currentDevice.DeviceId);
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
+            var deviceAuthorized = vault.WrappedVaultKeys.Any(x => x.DeviceId == currentDeviceId);
 
             if (!deviceAuthorized)
                 return ServiceResponse<VaultModel>.Fail("This device is not authorized for this vault. Run `synccl team request`.");
@@ -107,78 +105,77 @@ namespace Synccl.Core.Vault
 
         private byte[] RequireVK(VaultModel vault)
         {
-            var device = _deviceManager.GetOrCreateCurrentDevice();
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
 
             var vkWrap = vault.WrappedVaultKeys
-                .FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Vault)
+                .FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Vault)
                 ?? throw new InvalidOperationException("No vault key wrap for this device.");
 
-            return _keyManager.UnwrapVKWithDK(vault.Name, vkWrap);
+            return _keyManager.UnwrapVKWithDK(vkWrap);
+        }
+
+        private byte[] RequireNKForCurrentDevice(VaultModel vault, Namespace ns)
+        {
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
+            var myNkWrap = ns.WrappedNamespaceKeys
+                .FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Namespace)
+                ?? throw new InvalidOperationException($"This device is not authorized for namespace '{ns.Name}'. Request access.");
+
+            var vk = RequireVK(vault);
+            return _keyManager.UnwrapNKWithVK(ns.Name, myNkWrap, vk);
         }
 
         private byte[] EnsureNKForCurrentDevice(VaultModel vault, Namespace ns)
         {
-            var device = _deviceManager.GetOrCreateCurrentDevice();
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
             var myNkWrap = ns.WrappedNamespaceKeys
-                .FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Namespace);
+                .FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Namespace);
+            var vk = RequireVK(vault);
 
             if (myNkWrap != null)
             {
-                var vk = RequireVK(vault);
-                return _keyManager.UnwrapNKWithVK(vault.Name, ns.Name, myNkWrap, vk);
+                return _keyManager.UnwrapNKWithVK(ns.Name, myNkWrap, vk);
             }
 
             if (ns.WrappedNamespaceKeys.Count > 0)
                 throw new InvalidOperationException($"This device is not authorized for namespace '{ns.Name}'. Request access.");
 
-            // First wrap for this namespace: create NK and wrap it for current device
             var newNk = _keyManager.GenerateSymmetricKey();
-            var vkForWrap = RequireVK(vault);
             var nkId = Guid.NewGuid();
 
-            var newNkWrap = _keyManager.WrapNKWithVKAndDK(vault.Name, ns.Name, newNk, vkForWrap, nkId, version: 1);
+            var newNkWrap = _keyManager.WrapNKWithVKAndDK(ns.Name, newNk, vk, nkId, version: 1);
             newNkWrap.Type = KeyType.Namespace;
             ns.WrappedNamespaceKeys.Add(newNkWrap);
-            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vault.Name, ns.Name, newNkWrap.DevicePublicKeyForWrap);
+            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vk, ns.Name, newNkWrap.DevicePublicKeyForWrap);
 
             return newNk;
         }
 
-        private byte[] RequireNKForCurrentDevice(VaultModel vault, Namespace ns)
-        {
-            var device = _deviceManager.GetOrCreateCurrentDevice();
-            var myNkWrap = ns.WrappedNamespaceKeys
-                .FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Namespace)
-                ?? throw new InvalidOperationException($"This device is not authorized for namespace '{ns.Name}'. Request access.");
-
-            var vk = RequireVK(vault);
-            return _keyManager.UnwrapNKWithVK(vault.Name, ns.Name, myNkWrap, vk);
-        }
-
         private byte[] RequireIKForCurrentDevice(VaultModel vault, Namespace ns, VaultSecret secret)
         {
-            var device = _deviceManager.GetOrCreateCurrentDevice();
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
             var myIkWrap = secret.WrappedItemKeys
-                .FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Item)
+                .FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Item)
                 ?? throw new InvalidOperationException($"This device is not authorized for secret '{secret.Key}'. Request access.");
 
             var nk = RequireNKForCurrentDevice(vault, ns);
-            return _keyManager.UnwrapIKWithNK(vault.Name, ns.Name, secret.Key, myIkWrap, nk);
+            return _keyManager.UnwrapIKWithNK(ns.Name, secret.Key, myIkWrap, nk);
         }
 
         private void EnsureIKWrapForCurrentDevice(VaultModel vault, Namespace ns, VaultSecret secret, byte[] ik, Guid ikId, int version)
         {
-            var device = _deviceManager.GetOrCreateCurrentDevice();
-            if (secret.WrappedItemKeys.Any(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Item))
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
+            if (secret.WrappedItemKeys.Any(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Item))
                 return;
 
+            var vk = RequireVK(vault);
             var nk = RequireNKForCurrentDevice(vault, ns);
-            var wrap = _keyManager.WrapIKWithNK(vault.Name, ns.Name, secret.Key, ik, nk, ikId, version);
+            var wrap = _keyManager.WrapIKWithNK(ns.Name, secret.Key, ik, nk, vk, ikId, version);
             wrap.Type = KeyType.Item;
 
-            secret.WrappedItemKeys.RemoveAll(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Item);
+            secret.WrappedItemKeys.RemoveAll(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Item);
             secret.WrappedItemKeys.Add(wrap);
-            _deviceManager.AddOrUpdateItemEncryptionKey(vault.Name, ns.Name, secret.Key, wrap.DevicePublicKeyForWrap);
+            _deviceManager.AddOrUpdateItemEncryptionKey(vk, ns.Name, secret.Key, wrap.DevicePublicKeyForWrap);
         }
 
         // ---------------------------------------------------------------------
@@ -201,12 +198,12 @@ namespace Synccl.Core.Vault
             var vk = RequireVK(vault);
             var nk = _keyManager.GenerateSymmetricKey();
             var nkId = Guid.NewGuid();
-            var nkWrap = _keyManager.WrapNKWithVKAndDK(vault.Name, namespaceName, nk, vk, nkId, version: 1);
+            var nkWrap = _keyManager.WrapNKWithVKAndDK(namespaceName, nk, vk, nkId, version: 1);
             nkWrap.Type = KeyType.Namespace;
 
             ns.WrappedNamespaceKeys.Add(nkWrap);
             vault.Namespaces.Add(ns);
-            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vault.Name, namespaceName, nkWrap.DevicePublicKeyForWrap);
+            _deviceManager.AddOrUpdateNamespaceEncryptionKey(vk, namespaceName, nkWrap.DevicePublicKeyForWrap);
 
             return ServiceResponse.Ok();
         }
@@ -216,8 +213,8 @@ namespace Synccl.Core.Vault
             var ns = vault.Namespaces.FirstOrDefault(n => n.Name == namespaceName);
             if (ns == null)
                 return ServiceResponse.Fail($"Namespace [blue]{namespaceName}[/] not found.");
-            var device = _deviceManager.GetOrCreateCurrentDevice();
-            var myNkWrap = ns.WrappedNamespaceKeys.FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Namespace);
+            var currentDeviceId = _deviceManager.GetCurrentDeviceId();
+            var myNkWrap = ns.WrappedNamespaceKeys.FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Namespace);
             if (myNkWrap == null)
                 return ServiceResponse.Fail($"This device is not authorized for namespace [blue]{namespaceName}[/]. Request access.");
 
@@ -226,6 +223,7 @@ namespace Synccl.Core.Vault
             {
                 return ServiceResponse.Ok();
             }
+
             return ServiceResponse.Fail($"Failed to delete namespace [blue]{namespaceName}[/].");
         }
 
@@ -282,12 +280,12 @@ namespace Synccl.Core.Vault
             else
             {
                 // Update existing — must have IK wrap for this device
-                var device = _deviceManager.GetOrCreateCurrentDevice();
-                var myIkWrap = secret.WrappedItemKeys.FirstOrDefault(w => w.DeviceId == device.DeviceId && w.Type == KeyType.Item);
+                var currentDeviceId = _deviceManager.GetCurrentDeviceId();
+                var myIkWrap = secret.WrappedItemKeys.FirstOrDefault(w => w.DeviceId == currentDeviceId && w.Type == KeyType.Item);
                 if (myIkWrap == null)
                     return ServiceResponse.Fail($"This device is not authorized for secret [blue]{namespaceName}::{key}[/]. Request access.");
 
-                ik = _keyManager.UnwrapIKWithNK(vault.Name, ns.Name, secret.Key, myIkWrap, nk);
+                ik = _keyManager.UnwrapIKWithNK(ns.Name, secret.Key, myIkWrap, nk);
                 ikId = myIkWrap.KeyId;
                 keyVersion = myIkWrap.KeyVersion + 1;
             }

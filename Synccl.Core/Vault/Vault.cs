@@ -9,8 +9,6 @@ namespace Synccl.Core.Vault
     public class VaultModel
     {
         public Guid Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-        public string fileName { get; set; } = string.Empty;
         public List<KeyWrap> WrappedVaultKeys { get; set; } = new();
         public List<Namespace> Namespaces { get; set; } = new();
     }

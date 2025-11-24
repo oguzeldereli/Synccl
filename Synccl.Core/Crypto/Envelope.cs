@@ -14,6 +14,41 @@ public static class Envelope
     private static readonly byte[] HkdfSalt = new byte[32];
     private static readonly byte[] InfoPrefix = System.Text.Encoding.ASCII.GetBytes("synccl/x25519-wrap/v1");
 
+    public static byte[] WrapDataWithKey(byte[] data, byte[] key)
+    {
+        if (key.Length != 32)
+            throw new ArgumentException("Key must be 32 bytes", nameof(key));
+        var nonce = SodiumCore.GetRandomBytes(24);
+        var aad = System.Text.Encoding.UTF8.GetBytes("synccl/data/v1");
+        var ct = SecretAeadXChaCha20Poly1305.Encrypt(
+            data,
+            nonce,
+            key,
+            aad);
+        var result = new byte[24 + ct.Length];
+        Buffer.BlockCopy(nonce, 0, result, 0, 24);
+        Buffer.BlockCopy(ct, 0, result, 24, ct.Length);
+        return result;
+    }
+
+    public static byte[] UnwrapDataWithKey(byte[] envelope, byte[] key)
+    {
+        if (key.Length != 32)
+            throw new ArgumentException("Key must be 32 bytes", nameof(key));
+        if (envelope.Length < 24 + 16)
+            throw new ArgumentException("Envelope too short", nameof(envelope));
+        var nonce = new byte[24];
+        var ct = new byte[envelope.Length - 24];
+        Buffer.BlockCopy(envelope, 0, nonce, 0, 24);
+        Buffer.BlockCopy(envelope, 24, ct, 0, ct.Length);
+        var aad = System.Text.Encoding.UTF8.GetBytes("synccl/data/v1");
+        return SecretAeadXChaCha20Poly1305.Decrypt(
+            ct,
+            nonce,
+            key,
+            aad);
+    }
+
     public static byte[] WrapDekWithKey(byte[] dek, byte[] key)
     {
         if (dek.Length != 32)

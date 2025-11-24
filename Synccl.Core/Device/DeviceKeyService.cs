@@ -32,12 +32,4 @@ public sealed class DeviceKeyService
 
         return (publicKey, privateKey);
     }
-
-    public byte[] RequirePrivate(string account)
-    {
-        if (!_keychain.TryGetKey(account, out var priv) || priv.Length != 32)
-            throw new InvalidOperationException("X25519 private key not found in keychain for this device.");
-
-        return priv;
-    }
 }

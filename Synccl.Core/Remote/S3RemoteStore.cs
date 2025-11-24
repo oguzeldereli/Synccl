@@ -136,8 +136,6 @@ public sealed class S3RemoteStore : IRemoteStore
             ?? new VaultModel
             {
                 Id = localVault.Id,
-                Name = localVault.Name,
-                fileName = localVault.fileName,
                 WrappedVaultKeys = new(localVault.WrappedVaultKeys),
                 Namespaces = new()
             };

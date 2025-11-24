@@ -22,7 +22,6 @@ namespace Synccl.Core.Device
 
     public class VaultEncryptionKey
     {
-        public string Name { get; set; } = string.Empty;
         public byte[] PublicKey { get; set; } = Array.Empty<byte>();
         public List<NamespaceEncryptionKey> NamespaceEncryptionKeys { get; set; } = new();
     }

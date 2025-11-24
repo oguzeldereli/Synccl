@@ -97,7 +97,6 @@ app.Configure(config =>
             .WithDescription("Push all key-value pairs from a specific source namespace to target namespace, without deleting existing ones.");
         ns.AddCommand<NamespaceDiffCommand>("diff")
             .WithDescription("Compare key-value pairs between two namespaces.");
-
     }).WithAlias("ns");
 
     // manage remote storage

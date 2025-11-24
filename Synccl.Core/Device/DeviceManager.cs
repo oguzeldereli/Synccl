@@ -1,5 +1,6 @@
 ﻿using Amazon.S3.Model;
 using Sodium;
+using Synccl.Core.Crypto;
 using Synccl.Core.Errors;
 using Synccl.Core.Keys;
 using Synccl.Core.Security;
@@ -16,22 +17,48 @@ namespace Synccl.Core.Device
     public class DeviceManager
     {
         private readonly string _root;
-        private readonly IKeychain _keychain;
         private readonly ISecureSigner _secureSigner;
+        private readonly DeviceKeyService _deviceKeyService;
 
-        public DeviceManager(string root, IKeychain keychain, ISecureSigner signer)
+        public string VaultKeyAccountBase() => $"synccl:vault";
+        public string NamespaceKeyAccountBase(string nsName) => $"synccl:vault:namespace:{nsName}";
+        public string ItemKeyAccountBase(string nsName, string itemKey) => $"synccl:vault:namespace:{nsName}:item:{itemKey}";
+
+        public DeviceManager(string root, ISecureSigner signer, DeviceKeyService deviceKeyService)
         {
             _root = root;
-            _keychain = keychain;
             _secureSigner = signer;
+            _deviceKeyService = deviceKeyService;
         }
 
-        public Devices? GetDevices()
+        public (byte[] pub, byte[] priv) GetOrCreateDeviceVaultKEK()
         {
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
+            var vaultKeyAccount = 
+            _deviceKeyService.GetOrCreate(VaultKeyAccountBase());
+            return vaultKeyAccount;
+        }
+
+        public (byte[] pub, byte[] priv) GetOrCreateDeviceNamespaceKEK(string nsName)
+        {
+            var namespaceKeyAccount = 
+            _deviceKeyService.GetOrCreate(NamespaceKeyAccountBase(nsName));
+            return namespaceKeyAccount;
+        }
+
+        public (byte[] pub, byte[] priv) GetOrCreateDeviceItemKEK(string nsName, string itemKey)
+        {
+            var itemKeyAccount = 
+            _deviceKeyService.GetOrCreate(ItemKeyAccountBase(nsName, itemKey));
+            return itemKeyAccount;
+        }
+
+        public Devices? GetDevices(byte[] vk)
+        {
+            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json.enc");
             if (File.Exists(currentDevicePath))
             {
-                var json = File.ReadAllText(currentDevicePath);
+                var jsonEnc = File.ReadAllBytes(currentDevicePath);
+                var json = Envelope.UnwrapDataWithKey(jsonEnc, vk);
                 try
                 {
                     var existingDevices = JsonSerializer.Deserialize<Devices>(json);
@@ -50,10 +77,19 @@ namespace Synccl.Core.Device
                     DeviceList = new List<Device>()
                 };
                 var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
+                var newJsonEnc = Envelope.WrapDataWithKey(Encoding.UTF8.GetBytes(newJson), vk);
                 File.Create(currentDevicePath).Close();
-                File.WriteAllText(currentDevicePath, newJson);
+                File.WriteAllBytes(currentDevicePath, newJsonEnc);
                 return devices;
             }
+        }
+
+        public void SaveDevices(Devices devices, byte[] vk)
+        {
+            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json.enc");
+            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
+            var newJsonEnc = Envelope.WrapDataWithKey(Encoding.UTF8.GetBytes(newJson), vk);
+            File.WriteAllBytes(currentDevicePath, newJsonEnc);
         }
 
         public Guid GetCurrentDeviceId()
@@ -68,9 +104,9 @@ namespace Synccl.Core.Device
             return publicKey;
         }
 
-        public Device? GetDevice(Guid deviceId)
-        {
-            var devices = GetDevices();
+        public Device? GetDevice(Guid deviceId, byte[] vk)
+        {   
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 return null;
@@ -79,9 +115,9 @@ namespace Synccl.Core.Device
             return device;
         }
 
-        public Device GetOrCreateCurrentDevice()
+        public Device GetOrCreateCurrentDevice(byte[] vk)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 throw new InvalidOperationException("Failed to get or create devices.");
@@ -103,13 +139,13 @@ namespace Synccl.Core.Device
                 SigningPublicKey = publicKey
             };
 
-            AddOrSaveDevice(device);
+            AddOrSaveDevice(device, vk);
             return device;
         }
 
-        public bool AddOrSaveDevice(Device device)
+        public bool AddOrSaveDevice(Device device, byte[] vk)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 return false;
@@ -122,16 +158,13 @@ namespace Synccl.Core.Device
             }
 
             devices.DeviceList.Add(device);
-
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
-            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(currentDevicePath, newJson);
+            SaveDevices(devices, vk);
             return true;
         }
 
-        public void RemoveDevice(Guid deviceId)
+        public void RemoveDevice(Guid deviceId, byte[] vk)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 return;
@@ -143,27 +176,13 @@ namespace Synccl.Core.Device
                 devices.DeviceList.Remove(existingDevice);
             }
 
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
-            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(currentDevicePath, newJson);
-        }
-
-        public bool ChangeDeviceUsername(string username)
-        {
-            var device = GetOrCreateCurrentDevice();
-            if (device == null)
-            {
-                return false;
-            }
-
-            device.Username = username;
-            return true;
+            SaveDevices(devices, vk);
         }
 
         // Vault Encryption Key Management
-        public void AddOrUpdateVaultEncryptionKey(string vaultName, byte[] vaultPubKey, Guid? deviceId = null)
+        public void AddOrUpdateVaultEncryptionKey(byte[] vk, byte[] vaultPubKey, Guid? deviceId = null)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 throw new InvalidOperationException("Failed to get devices.");
@@ -176,29 +195,13 @@ namespace Synccl.Core.Device
                 throw new InvalidOperationException("Device not found.");
             }
 
-            if (string.IsNullOrWhiteSpace(device.VaultEncryptionKey.Name))
-            {
-                device.VaultEncryptionKey = new VaultEncryptionKey
-                {
-                    Name = vaultName,
-                    PublicKey = vaultPubKey,
-                    NamespaceEncryptionKeys = new List<NamespaceEncryptionKey>()
-                };
-            }
-            else if (device.VaultEncryptionKey.Name != vaultName)
-            {
-                throw new InvalidOperationException("Vault name does not match the existing vault encryption key.");
-            }
-
             device.VaultEncryptionKey.PublicKey = vaultPubKey;
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
-            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(currentDevicePath, newJson);
+            SaveDevices(devices, vk);
         }
 
-        public byte[]? GetDeviceVaultPubKey(string vaultName, Guid? deviceId = null)
+        public byte[]? GetDeviceVaultPubKey(byte[] vk, Guid? deviceId = null)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 return null;
@@ -207,11 +210,6 @@ namespace Synccl.Core.Device
             deviceId = deviceId ?? GetCurrentDeviceId();
             var device = devices.DeviceList.FirstOrDefault(d => d.DeviceId == deviceId);
             if (device == null)
-            {
-                return null;
-            }
-
-            if (device.VaultEncryptionKey.Name != vaultName)
             {
                 return null;
             }
@@ -220,9 +218,9 @@ namespace Synccl.Core.Device
         }
 
         // Namespace Encryption Key Management
-        public void AddOrUpdateNamespaceEncryptionKey(string vaultName, string nsName, byte[] nsPubKey, Guid? deviceId = null)
+        public void AddOrUpdateNamespaceEncryptionKey(byte[] vk, string nsName, byte[] nsPubKey, Guid? deviceId = null)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 throw new InvalidOperationException("Failed to get devices.");
@@ -233,11 +231,6 @@ namespace Synccl.Core.Device
             if (device == null)
             {
                 throw new InvalidOperationException("Device not found.");
-            }
-
-            if (device.VaultEncryptionKey.Name != vaultName)
-            {
-                throw new InvalidOperationException("Vault name does not match the existing vault encryption key.");
             }
 
             var nsKey = device.VaultEncryptionKey.NamespaceEncryptionKeys?.FirstOrDefault(nk => nk.NamespaceName == nsName);
@@ -255,22 +248,13 @@ namespace Synccl.Core.Device
             {
                 nsKey.PublicKey = nsPubKey;
             }
-
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
-            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(currentDevicePath, newJson);
+            
+            SaveDevices(devices, vk);
         }
 
-        public byte[]? GetDeviceNamespacePubKey(string vaultName, string nsName, Guid? deviceId = null)
+        public byte[]? GetDeviceNamespacePubKey(byte[] vk, string nsName, Guid? deviceId = null)
         {
-            var devicesPath = Path.Combine(_root, ".synccl", "devices.json");
-            if (!File.Exists(devicesPath))
-            {
-                return null;
-            }
-
-            var json = File.ReadAllText(devicesPath);
-            var devices = JsonSerializer.Deserialize<Devices>(json);
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 return null;
@@ -279,11 +263,6 @@ namespace Synccl.Core.Device
             deviceId = deviceId ?? GetCurrentDeviceId();
             var device = devices.DeviceList.FirstOrDefault(d => d.DeviceId == deviceId);
             if (device == null)
-            {
-                return null;
-            }
-
-            if (device.VaultEncryptionKey.Name != vaultName)
             {
                 return null;
             }
@@ -298,9 +277,9 @@ namespace Synccl.Core.Device
         }
 
         // Item Encryption Key Management
-        public void AddOrUpdateItemEncryptionKey(string vaultName, string nsName, string key, byte[] itemPubKey, Guid? deviceId = null)
+        public void AddOrUpdateItemEncryptionKey(byte[] vk, string nsName, string key, byte[] itemPubKey, Guid? deviceId = null)
         {
-            var devices = GetDevices();
+            var devices = GetDevices(vk);
             if (devices == null)
             {
                 throw new InvalidOperationException("Failed to get devices.");
@@ -311,11 +290,6 @@ namespace Synccl.Core.Device
             if (device == null)
             {
                 throw new InvalidOperationException("Device not found.");
-            }
-
-            if (device.VaultEncryptionKey.Name != vaultName)
-            {
-                throw new InvalidOperationException("Vault name does not match the existing vault encryption key.");
             }
 
             var nsKey = device.VaultEncryptionKey.NamespaceEncryptionKeys?.FirstOrDefault(nk => nk.NamespaceName == nsName);
@@ -339,12 +313,10 @@ namespace Synccl.Core.Device
                 itemKey.PublicKey = itemPubKey;
             }
 
-            var currentDevicePath = Path.Combine(_root, ".synccl", "devices.json");
-            var newJson = JsonSerializer.Serialize(devices, new JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(currentDevicePath, newJson);
+            SaveDevices(devices, vk);
         }
 
-        public byte[]? GetDeviceItemPubKey(string vaultName, string nsName, string key, Guid? deviceId = null)
+        public byte[]? GetDeviceItemPubKey(byte[] vk, string nsName, string key, Guid? deviceId = null)
         {
             var devicesPath = Path.Combine(_root, ".synccl", "devices.json");
             if (!File.Exists(devicesPath))
@@ -362,11 +334,6 @@ namespace Synccl.Core.Device
             deviceId = deviceId ?? GetCurrentDeviceId();
             var device = devices.DeviceList.FirstOrDefault(d => d.DeviceId == deviceId);
             if (device == null)
-            {
-                return null;
-            }
-
-            if (device.VaultEncryptionKey.Name != vaultName)
             {
                 return null;
             }
