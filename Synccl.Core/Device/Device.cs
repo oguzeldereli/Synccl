@@ -17,6 +17,7 @@ namespace Synccl.Core.Device
         public Guid UserId { get; set; }
         public string Username { get; set; } = string.Empty;
         public byte[] SigningPublicKey { get; set; } = Array.Empty<byte>();
+        public byte[] WrappingPublicKey { get; set; } = Array.Empty<byte>();
         public VaultEncryptionKey VaultEncryptionKey { get; set; } = new();
     }
 

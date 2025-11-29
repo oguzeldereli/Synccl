@@ -41,6 +41,7 @@ namespace Synccl.Core.Vault
         public Guid DeviceId { get; set; }
         public Guid KeyId { get; set; }
         public byte[] DevicePublicKeyForWrap { get; set; } = Array.Empty<byte>();
+        public byte[]? DevicePrivateKeyForWrap { get; set; } = null;
         public byte[] WrappedKey { get; set; } = Array.Empty<byte>();
         public string WrapAlgorithm { get; set; } = "x25519-xchacha20";
         public int KeyVersion { get; set; }

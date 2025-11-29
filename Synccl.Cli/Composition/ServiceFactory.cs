@@ -109,7 +109,7 @@ namespace Synccl.Cli.Composition
                 return new WindowsKeychain(root, wrapper);
             
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux) && wrapper != null)
-                return new LinuxKeychain(wrapper);
+                return new LinuxKeychain(root, wrapper);
 
             if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
                 return new MacKeychain();

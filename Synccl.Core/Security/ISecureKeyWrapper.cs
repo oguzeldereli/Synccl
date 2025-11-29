@@ -8,9 +8,10 @@ namespace Synccl.Core.Keys
 {
     public interface ISecureKeyWrapper
     {
-        (byte[] privBlob, byte[] pubBlob) WrapKeyWithTPM(byte[] key);
-        byte[] UnwrapKeyWithTPM(byte[] privBlob, byte[] pubBlob);
-        void DeleteStorageParent();
+        public (byte[] privBlob, byte[] pubBlob) RequireRSAKeyBlobs();
+        byte[] WrapKeyWithTPM(byte[] key, byte[] privBlob, byte[] pubBlob);
+        byte[] UnwrapKeyWithTPM(byte[] wrappedKey, byte[] privBlob, byte[] pubBlob);
+        byte[] GetPublicKey(byte[] privBlob, byte[] pubBlob);
     }
 }
     

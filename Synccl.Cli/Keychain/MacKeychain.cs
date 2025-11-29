@@ -42,6 +42,15 @@ namespace Synccl.Cli.Platform
             return true;
         }
 
+        public byte[] GetDevicePublicWrappingKey()
+        {
+            IntPtr priv = SE.GetOrCreatePrivateKey(Tag);
+            IntPtr pub = SE.CopyPubKey(priv);
+            byte[] spki = SE.ExportPublicKey(pub);
+
+            return spki;
+        }
+
         // ----------------------------------------------------------------------
         // Secure Enclave + P/Invoke bridge
         // ----------------------------------------------------------------------
@@ -67,6 +76,12 @@ namespace Synccl.Cli.Platform
 
             [DllImport(Dylib)]
             private static extern void DeleteSecureEnclaveKey(string tag);
+
+            [DllImport("/System/Library/Frameworks/Security.framework/Security")]
+            private static extern IntPtr SecKeyCopyExternalRepresentation(
+                IntPtr key,
+                out IntPtr error
+            );
 
             public static IntPtr GetOrCreatePrivateKey(string tag)
             {
@@ -116,6 +131,22 @@ namespace Synccl.Cli.Platform
                 CF.Release(clear);
                 return result;
             }
+
+            public static byte[] ExportPublicKey(IntPtr pubKey)
+            {
+                IntPtr error;
+
+                IntPtr cfData = SecKeyCopyExternalRepresentation(pubKey, out error);
+
+                if (cfData == IntPtr.Zero)
+                    throw new Exception("Failed to export public key via SecKeyCopyExternalRepresentation");
+
+                byte[] result = CF.FromCFData(cfData);
+                CF.Release(cfData);
+
+                return result;
+            }
+
 
             public static void DeleteKey(string tag)
             {

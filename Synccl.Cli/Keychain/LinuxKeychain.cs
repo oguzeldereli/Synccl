@@ -11,10 +11,13 @@ namespace Synccl.Cli.Platform
     public sealed class LinuxKeychain : IKeychain
     {
         private readonly ISecureKeyWrapper _keyWrapper;
+        private readonly string _root;
+        private readonly string rsaKeyAccount = "tpm_rsa_key";
 
-        public LinuxKeychain(ISecureKeyWrapper keyWrapper)
+        public LinuxKeychain(string root, ISecureKeyWrapper keyWrapper)
         {
             _keyWrapper = keyWrapper;
+            _root = root;
         }
 
         // ---------------------------------------------------------------------------------------
@@ -25,40 +28,23 @@ namespace Synccl.Cli.Platform
         {
             key = null!;
 
-            var bytes = SecretTool.Read(account);
+            var encKey = SecretTool.Read(account);
 
-            var privLength = BitConverter.ToInt32(bytes!, 0);
-            var priv = new byte[privLength];
-            Array.Copy(bytes!, 4, priv, 0, privLength);
-
-            var pubLength = BitConverter.ToInt32(bytes!, 4 + privLength);
-            var pub = new byte[pubLength];
-            Array.Copy(bytes!, 8 + privLength, pub, 0, pubLength);
-
-            if (priv == null || pub == null)
+            if (encKey == null || encKey.Length == 0)
                 return false;
 
-            key = _keyWrapper.UnwrapKeyWithTPM(priv, pub);
+            var (privBlob, pubBlob) = RequireRsaKeyBlobs();
+            key = _keyWrapper.UnwrapKeyWithTPM(encKey, privBlob, pubBlob);
 
             return true;
         }
 
         public bool TrySetKey(string account, byte[] key)
         {
-            // Store wrapped secret
+            var (privBlob, pubBlob) = RequireRsaKeyBlobs();
+            var encKey = _keyWrapper.WrapKeyWithTPM(key, privBlob, pubBlob);
 
-            var (priv, pub) = _keyWrapper.WrapKeyWithTPM(key);
-
-            var privLengthBytes = BitConverter.GetBytes(priv.Length);
-            var pubLengthBytes = BitConverter.GetBytes(pub.Length);
-
-            var bytes = new byte[4 + priv.Length + 4 + pub.Length];
-            Array.Copy(privLengthBytes, 0, bytes, 0, 4);
-            Array.Copy(priv, 0, bytes, 4, priv.Length);
-            Array.Copy(pubLengthBytes, 0, bytes, 4 + priv.Length, 4);
-            Array.Copy(pub, 0, bytes, 8 + priv.Length, pub.Length);
-
-            SecretTool.Write(account, bytes);
+            SecretTool.Write(account, encKey);
             return true;
         }
 
@@ -66,6 +52,12 @@ namespace Synccl.Cli.Platform
         {
             SecretTool.Delete(account);
             return true;
+        }
+
+        public byte[] GetDevicePublicWrappingKey()
+        {
+            var (privBlob, pubBlob) = RequireRsaKeyBlobs();
+            return _keyWrapper.GetPublicKey(privBlob, pubBlob);
         }
 
         // ---------------------------------------------------------------------------------------
@@ -127,6 +119,49 @@ namespace Synccl.Cli.Platform
 
             private static string Esc(string s) =>
                 "\"" + s.Replace("\"", "\\\"") + "\"";
+        }
+
+
+        private static string GetPath(string root, string account)
+        {
+            var baseDir = Path.Combine(root, ".synccl", "Keys");
+            var safe = Convert.ToBase64String(Encoding.UTF8.GetBytes(account))
+                           .Replace('/', '_')
+                           .Replace('+', '-');
+            return Path.Combine(baseDir, $"{safe}.bin");
+        }
+
+        private (byte[] privBlob, byte[] pubBlob) RequireRsaKeyBlobs()
+        {
+            var rsaKeyPath = GetPath(_root, rsaKeyAccount);
+            byte[] pubBlob, privBlob;
+            if (!File.Exists(rsaKeyPath))
+            {
+                (pubBlob, privBlob) = _keyWrapper.RequireRSAKeyBlobs();
+                Directory.CreateDirectory(Path.GetDirectoryName(rsaKeyPath)!);
+                using (var fs = new FileStream(rsaKeyPath, FileMode.Open))
+                using (var sr = new BinaryWriter(fs))
+                {
+                    sr.Write(privBlob.Length);
+                    sr.Write(privBlob);
+                    sr.Write(pubBlob.Length);
+                    sr.Write(pubBlob);
+                }
+            }
+            else
+            {
+
+                using (var fs = new FileStream(rsaKeyPath, FileMode.Open))
+                using (var sr = new BinaryReader(fs))
+                {
+                    var len = sr.ReadInt32();
+                    privBlob = sr.ReadBytes(len);
+                    len = sr.ReadInt32();
+                    pubBlob = sr.ReadBytes(len);
+                }
+            }
+
+            return (privBlob, pubBlob);
         }
     }
 }

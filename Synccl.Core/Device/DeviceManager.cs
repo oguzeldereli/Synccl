@@ -130,13 +130,15 @@ namespace Synccl.Core.Device
                 return existingDevice;
             }
 
-            var publicKey = GetDeviceSigningPublicKey();
+            var signingPublicKey = GetDeviceSigningPublicKey();
+            var publicWrappingKey = _deviceKeyService.GetDevicePublicWrappingKey();
             var device = new Device
             {
                 DeviceId = deviceId,
                 UserId = Guid.NewGuid(),
                 Username = Environment.UserName,
-                SigningPublicKey = publicKey
+                SigningPublicKey = signingPublicKey,
+                WrappingPublicKey = publicWrappingKey,
             };
 
             AddOrSaveDevice(device, vk);

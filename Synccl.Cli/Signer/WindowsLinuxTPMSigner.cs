@@ -242,7 +242,6 @@ namespace Synccl.Cli.Signer
             return ecdsa.ExportSubjectPublicKeyInfo();
         }
 
-
         public byte[] SignData(byte[] data)
         {
             if (_pubSignKey == null || _privSignKey == null)

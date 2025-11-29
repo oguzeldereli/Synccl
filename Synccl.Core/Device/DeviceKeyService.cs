@@ -32,4 +32,7 @@ public sealed class DeviceKeyService
 
         return (publicKey, privateKey);
     }
+
+    public byte[] GetDevicePublicWrappingKey()
+        => _keychain.GetDevicePublicWrappingKey();
 }

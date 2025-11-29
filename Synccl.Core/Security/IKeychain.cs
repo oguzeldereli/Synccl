@@ -11,5 +11,6 @@ namespace Synccl.Core.Keys
         bool TryGetKey(string account, out byte[] key);
         bool TrySetKey(string account, byte[] key);
         bool TryDeleteKey(string account);
+        byte[] GetDevicePublicWrappingKey();
     }
 }

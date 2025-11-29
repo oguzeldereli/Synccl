@@ -270,7 +270,6 @@ namespace Synccl.Cli.Commands
             var signer = ServiceFactory.GetSecureSigner(path);
             var wrapper = ServiceFactory.GetSecureKeyWrapper(path);
 
-            wrapper.DeleteStorageParent();
             signer.DeleteSigningKey();
             signer.DeleteStorageParent();
 
