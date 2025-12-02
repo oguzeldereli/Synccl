@@ -38,6 +38,13 @@ namespace Synccl.Core.Device
             return vaultKeyAccount;
         }
 
+        public (byte[] pub, byte[] priv) GetDeviceVaultKEK()
+        {
+            var vaultKeyAccount = 
+            _deviceKeyService.Get(VaultKeyAccountBase());
+            return vaultKeyAccount;
+        }
+
         public (byte[] pub, byte[] priv) GetOrCreateDeviceNamespaceKEK(string nsName)
         {
             var namespaceKeyAccount = 
@@ -45,10 +52,24 @@ namespace Synccl.Core.Device
             return namespaceKeyAccount;
         }
 
+        public (byte[] pub, byte[] priv) GetDeviceNamespaceKEK(string nsName)
+        {
+            var namespaceKeyAccount = 
+            _deviceKeyService.Get(NamespaceKeyAccountBase(nsName));
+            return namespaceKeyAccount;
+        }
+
         public (byte[] pub, byte[] priv) GetOrCreateDeviceItemKEK(string nsName, string itemKey)
         {
             var itemKeyAccount = 
             _deviceKeyService.GetOrCreate(ItemKeyAccountBase(nsName, itemKey));
+            return itemKeyAccount;
+        }
+
+        public (byte[] pub, byte[] priv) GetDeviceItemKEK(string nsName, string itemKey)
+        {
+            var itemKeyAccount = 
+            _deviceKeyService.Get(ItemKeyAccountBase(nsName, itemKey));
             return itemKeyAccount;
         }
 

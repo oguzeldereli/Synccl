@@ -178,6 +178,25 @@ namespace Synccl.Core.Vault
             _deviceManager.AddOrUpdateItemEncryptionKey(vk, ns.Name, secret.Key, wrap.DevicePublicKeyForWrap);
         }
 
+        private void EnsureIKWrapForAllDevices(VaultModel vault, Namespace ns, VaultSecret secret, byte[] ik, Guid ikId, int version)
+        {
+            var vk = RequireVK(vault);
+            var nk = RequireNKForCurrentDevice(vault, ns);
+            var deviceIds = ns.WrappedNamespaceKeys
+                .Where(w => w.Type == KeyType.Namespace)
+                .Select(w => w.DeviceId)
+                .Distinct();
+            foreach (var deviceId in deviceIds)
+            {
+                if (secret.WrappedItemKeys.Any(w => w.DeviceId == deviceId && w.Type == KeyType.Item))
+                    continue;
+                var wrap = _keyManager.WrapIKForDevice(vault, ns.Name, secret.Key, deviceId, ikId, version);
+                wrap.Type = KeyType.Item;
+                secret.WrappedItemKeys.Add(wrap);
+                _deviceManager.AddOrUpdateItemEncryptionKey(vk, ns.Name, secret.Key, wrap.DevicePublicKeyForWrap, deviceId);
+            }
+        }
+
         // ---------------------------------------------------------------------
         // Namespaces
         // ---------------------------------------------------------------------
@@ -246,8 +265,8 @@ namespace Synccl.Core.Vault
             return ServiceResponse<string>.Ok(Encoding.UTF8.GetString(plaintext));
         }
 
-        public ServiceResponse SetSecret(VaultModel vault, string namespaceName, string key, string value)
-        {
+        public ServiceResponse SetSecret(VaultModel vault, string namespaceName, string key, string value, bool createForAllDevices = true)
+        {   
             if (!vault.Namespaces.Any(n => n.Name == namespaceName))
             {
                 var nsCreationResult = CreateNamespace(vault, namespaceName);
@@ -276,6 +295,20 @@ namespace Synccl.Core.Vault
                 ik = _keyManager.GenerateSymmetricKey();
                 ikId = Guid.NewGuid();
                 keyVersion = 1;
+
+                // Encrypt value with IK
+                var valueBytes = Encoding.UTF8.GetBytes(value);
+                secret.Payload = _crypto.EncryptValue(valueBytes, ik);
+
+                // Ensure IK wraps
+                if (createForAllDevices)
+                {
+                    EnsureIKWrapForAllDevices(vault, ns, secret, ik, ikId, keyVersion);
+                }
+                else
+                {
+                    EnsureIKWrapForCurrentDevice(vault, ns, secret, ik, ikId, keyVersion);
+                }
             }
             else
             {
@@ -288,14 +321,14 @@ namespace Synccl.Core.Vault
                 ik = _keyManager.UnwrapIKWithNK(ns.Name, secret.Key, myIkWrap, nk);
                 ikId = myIkWrap.KeyId;
                 keyVersion = myIkWrap.KeyVersion + 1;
+
+                // Encrypt value with IK
+                var valueBytes = Encoding.UTF8.GetBytes(value);
+                secret.Payload = _crypto.EncryptValue(valueBytes, ik);
+
+                // Ensure our device has its IK wrap
+                EnsureIKWrapForCurrentDevice(vault, ns, secret, ik, ikId, keyVersion);
             }
-
-            // Encrypt value with IK
-            var valueBytes = Encoding.UTF8.GetBytes(value);
-            secret.Payload = _crypto.EncryptValue(valueBytes, ik);
-
-            // Ensure our device has its IK wrap
-            EnsureIKWrapForCurrentDevice(vault, ns, secret, ik, ikId, keyVersion);
 
             return ServiceResponse.Ok();
         }

@@ -12,6 +12,14 @@ public sealed class DeviceKeyService
     public DeviceKeyService(IKeychain keychain)
         => _keychain = keychain;
 
+    public (byte[] PublicKey, byte[] PrivateKey) Get(string account)
+    {
+        if (!_keychain.TryGetKey(account, out var priv))
+            throw new InvalidOperationException("Device is not authorized for this key.");
+        var pub = ScalarMult.Base(priv);
+        return (pub, priv);
+    }
+
     public (byte[] PublicKey, byte[] PrivateKey) GetOrCreate(string account)
     {
         if (_keychain.TryGetKey(account, out var priv))

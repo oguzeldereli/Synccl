@@ -21,7 +21,7 @@ namespace Synccl.Core.Vault
         public ServiceResponse CreateNamespace(VaultModel vault, string namespaceName);
         public ServiceResponse DeleteNamespace(VaultModel vault, string namespaceName);
         public ServiceResponse<string> GetSecret(VaultModel vault, string namespaceName, string key);
-        public ServiceResponse SetSecret(VaultModel vault, string namespaceName, string key, string value);
+        public ServiceResponse SetSecret(VaultModel vault, string namespaceName, string key, string value, bool createForAllDevices = false);
         public ServiceResponse UnsetSecret(VaultModel vault, string namespaceName, string key);
         public ServiceResponse<Dictionary<string, string>> ExportPlaintext(VaultModel vault, string namespaceName);
         public ServiceResponse ImportPlaintext(VaultModel vault, IDictionary<string, string> newPlaintextSecrets, string namespaceName);

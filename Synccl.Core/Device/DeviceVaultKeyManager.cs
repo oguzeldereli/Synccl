@@ -5,6 +5,7 @@ using Synccl.Core.VaultCrypto;
 using System;
 using System.Reflection.Metadata.Ecma335;
 using System.Text;
+using System.Xml.Linq;
 using static Synccl.Core.Vault.KeyWrap;
 
 namespace Synccl.Core.Device
@@ -37,7 +38,16 @@ namespace Synccl.Core.Device
             if (wrap.Type != KeyType.Vault)
                 throw new InvalidOperationException("Expected Vault key wrap.");
 
-            var (pub, priv) = _deviceManager.GetOrCreateDeviceVaultKEK();
+            byte[] pub, priv;
+            if (wrap.DevicePrivateKeyForWrap != null)
+            {
+                (pub, priv) = (wrap.DevicePublicKeyForWrap, wrap.DevicePrivateKeyForWrap);
+            }
+            else
+            {
+                (pub, priv) = _deviceManager.GetDeviceVaultKEK();
+            }
+
             return Envelope.UnwrapDekWithX25519(wrap.WrappedKey, priv, pub);
         }
 
@@ -56,7 +66,15 @@ namespace Synccl.Core.Device
 
         public byte[] UnwrapNKWithVK(string nsName, KeyWrap wrap, byte[] vaultKey)
         {
-            var (pub, priv) = _deviceManager.GetOrCreateDeviceNamespaceKEK(nsName);
+            byte[] pub, priv;
+            if (wrap.DevicePrivateKeyForWrap != null)
+            {
+                (pub, priv) = (wrap.DevicePublicKeyForWrap, wrap.DevicePrivateKeyForWrap);
+            }
+            else
+            {
+                (pub, priv) = _deviceManager.GetDeviceNamespaceKEK(nsName);
+            }
             var combined = Envelope.UnwrapDekWithX25519(wrap.WrappedKey, priv, pub);
 
             var nonce = new byte[24];
@@ -84,9 +102,17 @@ namespace Synccl.Core.Device
             
         public byte[] UnwrapIKWithNK(string nsName, string key, KeyWrap wrap, byte[] namespaceKey)
         {
-            var (pub, priv) = _deviceManager.GetOrCreateDeviceItemKEK(nsName, key);
-            var combined = Envelope.UnwrapDekWithX25519(wrap.WrappedKey, priv, pub);
+            byte[] pub, priv;
+            if (wrap.DevicePrivateKeyForWrap != null)
+            {
+                (pub, priv) = (wrap.DevicePublicKeyForWrap, wrap.DevicePrivateKeyForWrap);
+            }
+            else
+            {
+                (pub, priv) = _deviceManager.GetDeviceItemKEK(nsName, key);
+            }
 
+            var combined = Envelope.UnwrapDekWithX25519(wrap.WrappedKey, priv, pub);
             var nonce = new byte[24];
             var ct = new byte[combined.Length - 24];
             Buffer.BlockCopy(combined, 0, nonce, 0, 24);
