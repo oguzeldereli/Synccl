@@ -39,10 +39,6 @@
 	</ItemGroup>
 
 	<!-- Shared embedded resources -->
-	<ItemGroup>
-		<EmbeddedResource Include="Templates/default-synccl.yaml" />
-		<EmbeddedResource Include="Templates/default-env.example" />
-	</ItemGroup>
 
 	<!-- Include native macOS Secure Enclave bridge when building for macOS -->
 	<ItemGroup Condition="$(RuntimeIdentifier.Contains('osx'))">

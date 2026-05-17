@@ -1,9 +1,0 @@
-{
-  "profiles": {
-    "Synccl.Cli": {
-      "commandName": "Project",
-      "commandLineArgs": "init",
-      "workingDirectory": "C:\\Projects\\synccl-test"
-    }
-  }
-}
