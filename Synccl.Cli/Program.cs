@@ -169,7 +169,10 @@ app.Configure(config =>
      *      destroys the vault with the given name
      * 
      * mount|m <vault=default> <path> [--passphrase|--public-key]
+     *      mounts an unmounted vault to the given path with the given method
+     * 
      * unmount|um <vault=default> <path> [--passphrase|--public-key]
+     *      unmounts a vault into a portable file at the given path with the given method
      */
 });
 
