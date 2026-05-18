@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Synccl.Core.Entities.Enums
+namespace Synccl.Core.Entities.Enums.KeyWrapping
 {
     public enum KeyWrappingEncryptionAlgorithm
     {
