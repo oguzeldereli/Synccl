@@ -28,6 +28,12 @@ app.Configure(config =>
     config.AddCommand<RenameVaultCommand>("rename")
         .WithDescription("Rename a vault");
 
+    config.AddCommand<MountCommand>("mount").WithAlias("m")
+        .WithDescription("Mount a vault (cache credentials for this session)");
+
+    config.AddCommand<UnmountCommand>("unmount").WithAlias("um")
+        .WithDescription("Unmount a vault (clear cached credentials)");
+
     // ---- Single-item secrets ----
     config.AddCommand<SetSecretCommand>("set").WithAlias("s")
         .WithDescription("Set a secret value");
@@ -72,13 +78,6 @@ app.Configure(config =>
 
     config.AddCommand<RunCommand>("run").WithAlias("r")
         .WithDescription("Run a process with secrets injected as environment variables");
-
-    // ---- Protect / Unprotect ----
-    config.AddCommand<ProtectCommand>("protect")
-        .WithDescription("Add passphrase or key protection to a vault");
-
-    config.AddCommand<UnprotectCommand>("unprotect")
-        .WithDescription("Remove passphrase/key protection (revert to TPM-only)");
 
     // ---- Key rotation ----
     config.AddBranch("rotate", rotate =>

@@ -81,13 +81,21 @@ namespace Synccl.Core.Interfaces
             string itemKey,
             UnlockContext unlock);
 
-        // ---- Protect / Unprotect ----
+        // ---- Mount / Unmount (key transport) ----
 
-        /// <summary>Add a passphrase or public-key wrap on top of the current TPM wrap.</summary>
-        void Protect(EncryptedLocalVault vault, UnlockContext unlock, UnlockContext newProtection);
+        /// <summary>
+        /// Unmount: unwrap the vault master key via the current TPM, add a passphrase-Argon2id
+        /// or public-key wrap, and REMOVE the TPM wrap. The vault file becomes portable and
+        /// machine-independent.  AccessMode is set to the appropriate Unmounted* value.
+        /// </summary>
+        EncryptedLocalVault UnmountVault(EncryptedLocalVault vault, UnlockContext transportProtection);
 
-        /// <summary>Remove the extra wrap, leaving only the TPM-bound wrap.</summary>
-        void Unprotect(EncryptedLocalVault vault, UnlockContext currentUnlock);
+        /// <summary>
+        /// Mount: unwrap the vault master key via the passphrase or public-key wrap, add a
+        /// TPM wrap for THIS machine, and REMOVE the passphrase/pubkey wraps.  The vault
+        /// becomes device-bound and AccessMode is set to MountedDeviceBound.
+        /// </summary>
+        EncryptedLocalVault MountVault(EncryptedLocalVault vault, UnlockContext transportUnlock);
 
         // ---- Access mode ----
         void SetAccessMode(EncryptedLocalVault vault, EncryptedLocalVaultAccessMode mode);

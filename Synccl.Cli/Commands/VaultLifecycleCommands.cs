@@ -166,4 +166,104 @@ namespace Synccl.Cli.Commands
             catch (Exception ex) { return CliHelpers.HandleError(ex); }
         }
     }
+
+    internal sealed class MountCommand : Command<MountCommand.Settings>
+    {
+        public sealed class Settings : CommandSettings
+        {
+            [CommandArgument(0, "<file>")]
+            [Description("Path to the .vault.json.unmounted file to import")]
+            public string InputFilePath { get; init; } = string.Empty;
+
+            [CommandOption("--passphrase")]
+            [Description("Unlock the portable vault file with a passphrase (prompts if omitted)")]
+            public bool UsePassphrase { get; init; }
+
+            [CommandOption("--passphrase-value")]
+            [Description("Passphrase value (insecure; prefer interactive prompt)")]
+            public string? PassphraseValue { get; init; }
+
+            [CommandOption("--private-key")]
+            [Description("Path to X25519 private key file used to unlock the portable vault file")]
+            public string? PrivateKeyPath { get; init; }
+        }
+
+        protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(settings.InputFilePath))
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Provide the path to the [bold].vault.json.unmounted[/] file.");
+                    return 1;
+                }
+
+                if (!settings.UsePassphrase && settings.PrivateKeyPath is null)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Specify [bold]--passphrase[/] or [bold]--private-key <path>[/] to unlock the vault.");
+                    return 1;
+                }
+
+                var transportUnlock = CliHelpers.BuildUnlock(
+                    useTpm: false,
+                    usePassphrase: settings.UsePassphrase,
+                    passphrase: settings.PassphraseValue,
+                    privateKeyPath: settings.PrivateKeyPath);
+
+                ServiceFactory.Create().Mount(settings.InputFilePath, transportUnlock);
+                AnsiConsole.MarkupLine($"[green]Vault mounted from '[bold]{settings.InputFilePath}[/]' — now bound to this device's TPM.[/]");
+                return 0;
+            }
+            catch (Exception ex) { return CliHelpers.HandleError(ex); }
+        }
+    }
+
+    internal sealed class UnmountCommand : Command<UnmountCommand.Settings>
+    {
+        public sealed class Settings : CommandSettings
+        {
+            [CommandArgument(0, "[vault]")]
+            [Description("Vault name (default: 'default')")]
+            public string VaultName { get; init; } = "default";
+
+            [CommandOption("--output")]
+            [Description("Directory to write the .vault.json.unmounted file (defaults to current directory)")]
+            public string? OutputPath { get; init; }
+
+            [CommandOption("--passphrase")]
+            [Description("Protect the portable vault file with a passphrase (prompts if omitted)")]
+            public bool UsePassphrase { get; init; }
+
+            [CommandOption("--passphrase-value")]
+            [Description("Passphrase value (insecure; prefer interactive prompt)")]
+            public string? PassphraseValue { get; init; }
+
+            [CommandOption("--private-key")]
+            [Description("Path to X25519 private key used to protect the portable vault file")]
+            public string? PrivateKeyPath { get; init; }
+        }
+
+        protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken)
+        {
+            try
+            {
+                if (!settings.UsePassphrase && settings.PrivateKeyPath is null)
+                {
+                    AnsiConsole.MarkupLine("[red]Error:[/] Specify [bold]--passphrase[/] or [bold]--private-key <path>[/] to protect the portable vault file.");
+                    return 1;
+                }
+
+                var transportProtection = CliHelpers.BuildUnlock(
+                    useTpm: false,
+                    usePassphrase: settings.UsePassphrase,
+                    passphrase: settings.PassphraseValue,
+                    privateKeyPath: settings.PrivateKeyPath);
+
+                var filePath = ServiceFactory.Create().Unmount(settings.VaultName, transportProtection, settings.OutputPath);
+                AnsiConsole.MarkupLine($"[green]Vault '[bold]{settings.VaultName}[/]' unmounted.[/] Portable file: [bold]{filePath}[/]");
+                return 0;
+            }
+            catch (Exception ex) { return CliHelpers.HandleError(ex); }
+        }
+    }
 }

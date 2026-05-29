@@ -578,62 +578,92 @@ namespace Synccl.Core.Services
         }
 
         // ------------------------------------------------------------------ //
-        //  Protect / Unprotect
+        //  Mount / Unmount  (key-transport operations)
         // ------------------------------------------------------------------ //
 
-        public void Protect(EncryptedLocalVault vault, UnlockContext unlock, UnlockContext newProtection)
+        /// <summary>
+        /// Unmount: adds a passphrase-Argon2id or pubkey wrap to the vault master key,
+        /// then removes all TPM wraps so the vault file is portable to another machine.
+        /// </summary>
+        public EncryptedLocalVault UnmountVault(EncryptedLocalVault vault, UnlockContext transportProtection)
         {
-            var vaultKey = UnwrapVaultKey(vault, unlock);
+            if (!transportProtection.IsPassphrase && !transportProtection.IsPublicKey)
+                throw new ArgumentException(
+                    "Transport protection must specify a passphrase or public key.", nameof(transportProtection));
+
+            // Unlock via TPM (current device binding).
+            var vaultKey = UnwrapVaultKey(vault, UnlockContext.TpmBound);
             try
             {
                 var vaultKeyId = vault.WrappedVaultKeys[0].WrappedKeyId;
-                KeyWrap newWrap;
+                KeyWrap transportWrap;
+                EncryptedLocalVaultAccessMode newMode;
 
-                if (newProtection.IsPassphrase)
+                if (transportProtection.IsPassphrase)
                 {
-                    newWrap = _keyWrapper.Wrap(
+                    transportWrap = _keyWrapper.Wrap(
                         KeyWrappingProfile.PassphraseArgon2IdXChaCha20Poly1305,
                         vaultKeyId, Guid.Empty, vaultKey,
-                        newProtection.PassphraseBytes!,
-                        $"vault:{vault.Name}:passphrase");
-                    SetAccessMode(vault, EncryptedLocalVaultAccessMode.MountedDeviceBoundPassphraseProtected);
-                }
-                else if (newProtection.IsPublicKey)
-                {
-                    newWrap = _keyWrapper.Wrap(
-                        KeyWrappingProfile.PublicKeyX25519HkdfXChaCha20Poly1305,
-                        vaultKeyId, Guid.Empty, vaultKey,
-                        newProtection.PrivateKeyBytes!,
-                        $"vault:{vault.Name}:pubkey");
-                    SetAccessMode(vault, EncryptedLocalVaultAccessMode.MountedDeviceBoundPublicKeyProtected);
+                        transportProtection.PassphraseBytes!,
+                        $"vault:{vault.Name}:transport:passphrase");
+                    newMode = EncryptedLocalVaultAccessMode.UnmountedPassphraseProtected;
                 }
                 else
                 {
-                    throw new ArgumentException("New protection must specify passphrase or public key.");
+                    transportWrap = _keyWrapper.Wrap(
+                        KeyWrappingProfile.PublicKeyX25519HkdfXChaCha20Poly1305,
+                        vaultKeyId, Guid.Empty, vaultKey,
+                        transportProtection.PrivateKeyBytes!,
+                        $"vault:{vault.Name}:transport:pubkey");
+                    newMode = EncryptedLocalVaultAccessMode.UnmountedPublicKeyProtected;
                 }
 
-                vault.AddVaultKeyWrap(newWrap);
+                // Keep only the new transport wrap (remove all TPM wraps).
+                var updatedVault = EncryptedLocalVault.Reconstruct(
+                    vault.Id, vault.Name, vault.DefaultNamespaceName,
+                    vault.Version, newMode,
+                    [transportWrap],
+                    vault.Namespaces);
+
+                return updatedVault;
             }
             finally { CryptographicOperations.ZeroMemory(vaultKey); }
         }
 
-        public void Unprotect(EncryptedLocalVault vault, UnlockContext currentUnlock)
+        /// <summary>
+        /// Mount: unwraps the vault master key via transport credentials (passphrase/pubkey),
+        /// adds a fresh TPM wrap for this machine, and removes all transport wraps so the
+        /// vault becomes device-bound.
+        /// </summary>
+        public EncryptedLocalVault MountVault(EncryptedLocalVault vault, UnlockContext transportUnlock)
         {
-            // Ensure the vault can actually be unlocked.
-            var vaultKey = UnwrapVaultKey(vault, currentUnlock);
-            CryptographicOperations.ZeroMemory(vaultKey);
+            if (!transportUnlock.IsPassphrase && !transportUnlock.IsPublicKey)
+                throw new ArgumentException(
+                    "Mount requires passphrase or public-key unlock context.", nameof(transportUnlock));
 
-            // Remove non-TPM wraps.
-            var toRemove = vault.WrappedVaultKeys
-                .Where(w => w.Profile != KeyWrappingProfile.TpmAes256 &&
-                             w.Profile != KeyWrappingProfile.TpmAes128)
-                .Select(w => w.Id)
-                .ToList();
+            // Unlock via the transport credentials.
+            var vaultKey = UnwrapVaultKey(vault, transportUnlock);
+            try
+            {
+                var newVaultKeyId = vault.WrappedVaultKeys[0].WrappedKeyId;
 
-            foreach (var id in toRemove)
-                vault.RemoveVaultKeyWrap(id);
+                // Wrap with this machine's TPM.
+                var tpmWrap = _keyWrapper.Wrap(
+                    KeyWrappingProfile.TpmAes256,
+                    newVaultKeyId, Guid.Empty, vaultKey,
+                    Array.Empty<byte>(),
+                    $"vault:{vault.Name}:master");
 
-            SetAccessMode(vault, EncryptedLocalVaultAccessMode.MountedDeviceBound);
+                // Keep only the TPM wrap (remove all transport wraps).
+                var updatedVault = EncryptedLocalVault.Reconstruct(
+                    vault.Id, vault.Name, vault.DefaultNamespaceName,
+                    vault.Version, EncryptedLocalVaultAccessMode.MountedDeviceBound,
+                    [tpmWrap],
+                    vault.Namespaces);
+
+                return updatedVault;
+            }
+            finally { CryptographicOperations.ZeroMemory(vaultKey); }
         }
 
         public void SetAccessMode(EncryptedLocalVault vault, EncryptedLocalVaultAccessMode mode)

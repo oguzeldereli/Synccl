@@ -76,7 +76,6 @@ namespace Synccl.Cli
                 return UnlockContext.FromPrivateKey(keyBytes);
             }
 
-            // Default: TPM-bound (no passphrase/key needed).
             return UnlockContext.TpmBound;
         }
 

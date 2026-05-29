@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using Synccl.Core.Enums;
 using Synccl.Core.Error.Exceptions;
 using Synccl.Core.Interfaces;
@@ -27,6 +28,19 @@ namespace Synccl.Core.Services
 
         private string ResolveDir(string? storeDirectory, bool createIfMissing = false)
             => storeDirectory ?? _store.ResolveStoreDirectory(createIfMissing);
+
+        private static string SanitiseName(string name)
+        {
+            var invalid = Path.GetInvalidFileNameChars();
+            return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+        }
+
+        /// <summary>
+        /// Derives the X25519 public key from a private key using Sodium's ScalarMult base.
+        /// This is needed when the caller supplies a private key to encrypt to themselves.
+        /// </summary>
+        private static byte[] PublicKeyFromPrivate(byte[] privateKey)
+            => Sodium.ScalarMult.Base(privateKey);
 
         private EncryptedLocalVault LoadVault(string vaultName, string storeDir)
         {
@@ -105,8 +119,83 @@ namespace Synccl.Core.Services
         }
 
         // ------------------------------------------------------------------ //
-        //  Single-item operations
+        //  Mount / Unmount  (key transport)
         // ------------------------------------------------------------------ //
+
+        public string Unmount(string vaultName, UnlockContext transportProtection, string? outputPath = null, string? storeDirectory = null)
+        {
+            var dir = ResolveDir(storeDirectory);
+            var vault = LoadVault(vaultName, dir);
+
+            // 1. Perform key-wrap transform: strip TPM wrap, add transport wrap.
+            var unmounted = _crypto.UnmountVault(vault, transportProtection);
+
+            // 2. Serialise the transformed vault to JSON.
+            var dto = VaultMapper.ToDto(unmounted);
+            var json = JsonConvert.SerializeObject(dto, new JsonSerializerSettings
+            {
+                Formatting = Formatting.Indented,
+                NullValueHandling = NullValueHandling.Ignore
+            });
+
+            // 3. Determine output file path: <outputPath>/<vaultName>.vault.json.unmounted
+            //    or <cwd>/<vaultName>.vault.json.unmounted
+            var baseDir = string.IsNullOrEmpty(outputPath)
+                ? Directory.GetCurrentDirectory()
+                : outputPath;
+            var fileName = $"{SanitiseName(vaultName)}.vault.json.unmounted";
+            var filePath = Path.Combine(baseDir, fileName);
+
+            // 4. Encrypt the whole JSON with the transport credential.
+            if (transportProtection.IsPassphrase)
+                UnmountedVaultSerializer.EncryptWithPassphrase(json, filePath, transportProtection.PassphraseBytes!);
+            else
+                UnmountedVaultSerializer.EncryptWithPublicKey(json, filePath, PublicKeyFromPrivate(transportProtection.PrivateKeyBytes!));
+
+            // 5. Delete the normal vault file from .synccl.
+            _store.Delete(vaultName, dir);
+
+            return filePath;
+        }
+
+        public void Mount(string inputFilePath, UnlockContext transportUnlock, string? storeDirectory = null)
+        {
+            if (!File.Exists(inputFilePath))
+                throw new FileNotFoundException($"Unmounted vault file not found: {inputFilePath}", inputFilePath);
+
+            // 1. Decrypt the portable file.
+            string json;
+            if (transportUnlock.IsPassphrase)
+                json = UnmountedVaultSerializer.DecryptWithPassphrase(inputFilePath, transportUnlock.PassphraseBytes!);
+            else if (transportUnlock.IsPublicKey)
+                json = UnmountedVaultSerializer.DecryptWithPrivateKey(inputFilePath, transportUnlock.PrivateKeyBytes!);
+            else
+                throw new ArgumentException("Mount requires passphrase or private-key unlock context.", nameof(transportUnlock));
+
+            // 2. Deserialise and rebuild domain vault.
+            var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+            var dto = JsonConvert.DeserializeObject<Synccl.Core.Persistence.Dto.EncryptedLocalVaultDto>(json, settings)
+                ?? throw new InvalidDataException("Unmounted vault file contained invalid JSON.");
+            var vault = VaultMapper.ToDomain(dto);
+
+            // 3. Perform key-wrap transform: strip transport wrap, add TPM wrap.
+            var mounted = _crypto.MountVault(vault, transportUnlock);
+
+            // 4. Save to .synccl (creates if the directory exists; requires init).
+            var dir = ResolveDir(storeDirectory);
+            if (_store.Exists(mounted.Name, dir))
+                throw new VaultAlreadyExistsException(mounted.Name);
+            SaveVault(mounted, dir);
+        }
+
+        public bool IsMounted(string vaultName, string? storeDirectory = null)
+        {
+            var dir = ResolveDir(storeDirectory);
+            var dto = _store.Load(vaultName, dir) ?? throw new VaultNotFoundException(vaultName);
+            return dto.AccessMode == Enums.EncryptedLocalVaultAccessMode.MountedDeviceBound.ToString()
+                || dto.AccessMode == Enums.EncryptedLocalVaultAccessMode.MountedDeviceBoundPassphraseProtected.ToString()
+                || dto.AccessMode == Enums.EncryptedLocalVaultAccessMode.MountedDeviceBoundPublicKeyProtected.ToString();
+        }
 
         public void SetSecret(
             string vaultName, string namespaceName, string key, string value,
@@ -351,30 +440,6 @@ namespace Synccl.Core.Services
             var dir = ResolveDir(storeDirectory);
             var vault = LoadVault(vaultName, dir);
             _crypto.RotateItemKey(vault, namespaceName, itemKey, unlock);
-            SaveVault(vault, dir);
-        }
-
-        // ------------------------------------------------------------------ //
-        //  Protect / Unprotect
-        // ------------------------------------------------------------------ //
-
-        public void Protect(
-            string vaultName, UnlockContext currentUnlock, UnlockContext newProtection,
-            string? storeDirectory = null)
-        {
-            var dir = ResolveDir(storeDirectory);
-            var vault = LoadVault(vaultName, dir);
-            _crypto.Protect(vault, currentUnlock, newProtection);
-            SaveVault(vault, dir);
-        }
-
-        public void Unprotect(
-            string vaultName, UnlockContext currentUnlock,
-            string? storeDirectory = null)
-        {
-            var dir = ResolveDir(storeDirectory);
-            var vault = LoadVault(vaultName, dir);
-            _crypto.Unprotect(vault, currentUnlock);
             SaveVault(vault, dir);
         }
 
