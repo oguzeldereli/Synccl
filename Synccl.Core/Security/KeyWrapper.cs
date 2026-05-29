@@ -165,7 +165,7 @@ namespace Synccl.Core.Security
             if (key == null || key.Length == 0)
                 throw new ArgumentException("Key to wrap is required.", nameof(key));
 
-            if (wrappingMaterial == null || wrappingMaterial.Length == 0)
+            if ((wrappingMaterial == null || wrappingMaterial.Length == 0) && profile != KeyWrappingProfile.TpmAes128 && profile != KeyWrappingProfile.TpmAes256)
                 throw new ArgumentException("Wrapping material is required.", nameof(wrappingMaterial));
 
             info ??= string.Empty;
@@ -295,7 +295,7 @@ namespace Synccl.Core.Security
             if (wrap == null)
                 throw new ArgumentNullException(nameof(wrap));
 
-            if (unwrappingMaterial == null || unwrappingMaterial.Length == 0)
+            if ((unwrappingMaterial == null || unwrappingMaterial.Length == 0) && wrap.Profile != KeyWrappingProfile.TpmAes128 && wrap.Profile != KeyWrappingProfile.TpmAes256)
                 throw new ArgumentException("Unwrapping material is required.", nameof(unwrappingMaterial));
 
             var metadata = KeyWrappingMetadata.From(wrap.Profile);

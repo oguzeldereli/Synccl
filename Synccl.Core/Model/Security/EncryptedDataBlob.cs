@@ -13,8 +13,11 @@ namespace Synccl.Core.Model.Security
         public byte[] Ciphertext { get; private set; }
         public byte[] Nonce { get; private set; }
         public byte[] Aad { get; private set; }
+        public Guid EncryptedBy { get; private set; }
 
-        private EncryptedDataBlob(DataEncryptionAlgorithm algorithm, byte[] ciphertext, byte[] nonce, byte[] aad)
+        private EncryptedDataBlob(
+            DataEncryptionAlgorithm algorithm, 
+            byte[] ciphertext, byte[] nonce, byte[] aad, Guid encryptedBy)
         {
             if (ciphertext == null || ciphertext.Length == 0)
                 throw new ArgumentException("Ciphertext cannot be null or empty.", nameof(ciphertext));
@@ -27,18 +30,19 @@ namespace Synccl.Core.Model.Security
             Ciphertext = ciphertext;
             Nonce = nonce;
             Aad = aad;
+            EncryptedBy = encryptedBy;
         }
 
-        public static EncryptedDataBlob Create(DataEncryptionAlgorithm algorithm, byte[] ciphertext, byte[] nonce, byte[] aad)
+        public static EncryptedDataBlob Create(DataEncryptionAlgorithm algorithm, byte[] ciphertext, byte[] nonce, byte[] aad, Guid encryptedBy)
         {
-            return new EncryptedDataBlob(algorithm, ciphertext, nonce, aad);
+            return new EncryptedDataBlob(algorithm, ciphertext, nonce, aad, encryptedBy);
         }
 
         public static EncryptedDataBlob From(EncryptedDataBlob blob)
         {
             if (blob == null)
                 throw new ArgumentNullException(nameof(blob));
-            return new EncryptedDataBlob(blob.Algorithm, blob.Ciphertext, blob.Nonce, blob.Aad);
+            return new EncryptedDataBlob(blob.Algorithm, blob.Ciphertext, blob.Nonce, blob.Aad, blob.EncryptedBy);
         }
     }
 }

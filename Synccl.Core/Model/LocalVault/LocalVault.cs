@@ -1,5 +1,4 @@
-﻿using Synccl.Core.Entities.Enums;
-using Synccl.Core.Error.Exceptions;
+﻿using Synccl.Core.Error.Exceptions;
 
 namespace Synccl.Core.Model.LocalVault
 {
