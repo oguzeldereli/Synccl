@@ -72,9 +72,12 @@ namespace Synccl.Cli.Security
         private readonly Tpm2 _tpm;
         private readonly Tpm2Device _device;
 
-        // Serialised blobs stored on disk; loaded once at construction.
+        // The TpmPublic blob is kept for device-identity checks (GetAesKeyPublicBlob).
         private readonly byte[] _aesPublicBlob;
-        private readonly byte[] _aesPrivateBlob;
+
+        // Transient AES-256 key loaded once at construction and reused for every
+        // Wrap/Unwrap call.  This avoids one CreatePrimary + one Load per operation.
+        private readonly TpmHandle _transientAesKey;
 
         private bool _disposed;
 
@@ -95,7 +98,7 @@ namespace Synccl.Cli.Security
             _device.Connect();
             _tpm = new Tpm2(_device);
 
-            (_aesPublicBlob, _aesPrivateBlob) = LoadOrCreateAesKeyBlobs();
+            (_aesPublicBlob, _transientAesKey) = LoadOrCreateAesKey();
         }
 
         // ------------------------------------------------------------------ //
@@ -108,35 +111,22 @@ namespace Synccl.Cli.Security
             if (keyMaterial is null || keyMaterial.Length == 0)
                 throw new ArgumentException("Key material is required.", nameof(keyMaterial));
 
-            TpmHandle transient = LoadTransientAesKey();
-            try
-            {
-                // TPM2_EncryptDecrypt: 1 = encrypt.
-                // We generate a random starting IV and store it so decryption can
-                // use the exact same IV.  We do NOT store ivOut (the feedback state
-                // after encryption) — that is only useful for CFB chaining, not for
-                // standalone decryption of this block.
-                byte[] ivIn = new byte[16];
-                System.Security.Cryptography.RandomNumberGenerator.Fill(ivIn);
-                byte[] ciphertext = _tpm.EncryptDecrypt(
-                    transient,
-                    1,
-                    TpmAlgId.Cfb,
-                    ivIn,
-                    keyMaterial,
-                    out _);
+            byte[] ivIn = new byte[16];
+            System.Security.Cryptography.RandomNumberGenerator.Fill(ivIn);
+            byte[] ciphertext = _tpm.EncryptDecrypt(
+                _transientAesKey,
+                1,
+                TpmAlgId.Cfb,
+                ivIn,
+                keyMaterial,
+                out _);
 
-                return TPMKeyBlob.Create(
-                    ciphertext,
-                    ivIn,           // store the starting IV, not the post-encrypt ivOut
-                    tpmPublicBlob: _aesPublicBlob,
-                    tpmPrivateBlob: [],
-                    KeyWrappingEncryptionAlgorithm.AES_256);
-            }
-            finally
-            {
-                try { _tpm.FlushContext(transient); } catch { }
-            }
+            return TPMKeyBlob.Create(
+                ciphertext,
+                ivIn,
+                tpmPublicBlob: _aesPublicBlob,
+                tpmPrivateBlob: [],
+                KeyWrappingEncryptionAlgorithm.AES_256);
         }
 
         public byte[] Unwrap(TPMKeyBlob wrappedKey)
@@ -144,24 +134,13 @@ namespace Synccl.Cli.Security
             if (_disposed) throw new ObjectDisposedException(nameof(TpmKeyWrapper));
             if (wrappedKey is null) throw new ArgumentNullException(nameof(wrappedKey));
 
-            TpmHandle transient = LoadTransientAesKey();
-            try
-            {
-                // TPM2_EncryptDecrypt: 0 = decrypt, supply the stored IV
-                byte[] plaintext = _tpm.EncryptDecrypt(
-                    transient,
-                    0,
-                    TpmAlgId.Cfb,
-                    wrappedKey.Iv,
-                    wrappedKey.Ciphertext,
-                    out _);
-
-                return plaintext;
-            }
-            finally
-            {
-                try { _tpm.FlushContext(transient); } catch { }
-            }
+            return _tpm.EncryptDecrypt(
+                _transientAesKey,
+                0,
+                TpmAlgId.Cfb,
+                wrappedKey.Iv,
+                wrappedKey.Ciphertext,
+                out _);
         }
 
         // ------------------------------------------------------------------ //
@@ -175,56 +154,47 @@ namespace Synccl.Cli.Security
         //  Key provisioning
         // ------------------------------------------------------------------ //
 
+        // ------------------------------------------------------------------ //
+        //  Key provisioning
+        // ------------------------------------------------------------------ //
+
         /// <summary>
-        /// Loads AES key blobs from disk, or creates them for the first time.
-        /// The TpmPrivate blob is encrypted by the TPM (wrapped under the storage
-        /// primary seed), so storing it on disk is safe - it is only usable on
-        /// the specific TPM that created it.
+        /// Loads (or creates) the AES-256 key blobs from disk, then loads the key
+        /// as a transient object under a freshly re-derived storage primary.
+        /// The primary is flushed immediately after Load — it is only needed to
+        /// authorise the Load/Create commands.  The returned transient handle
+        /// stays loaded for the lifetime of this object.
         /// </summary>
-        private (byte[] pubBlob, byte[] privBlob) LoadOrCreateAesKeyBlobs()
+        private (byte[] pubBlob, TpmHandle transient) LoadOrCreateAesKey()
         {
             string configDir = GetConfigDirectory();
             string pubFile   = Path.Combine(configDir, "tpm_key.pub");
             string privFile  = Path.Combine(configDir, "tpm_key.priv");
 
-            if (File.Exists(pubFile) && File.Exists(privFile))
-            {
-                byte[] pub  = File.ReadAllBytes(pubFile);
-                byte[] priv = File.ReadAllBytes(privFile);
-
-                if (TryVerifyBlobs(pub, priv))
-                    return (pub, priv);
-
-                // Blobs invalid (different TPM or re-provisioned) - recreate.
-            }
-
-            return CreateAndSaveAesKeyBlobs(configDir, pubFile, privFile);
-        }
-
-        private bool TryVerifyBlobs(byte[] pubBlob, byte[] privBlob)
-        {
-            try
-            {
-                TpmHandle primary = CreateStoragePrimary();
-                try
-                {
-                    var pub  = Marshaller.FromTpmRepresentation<TpmPublic>(pubBlob);
-                    var priv = Marshaller.FromTpmRepresentation<TpmPrivate>(privBlob);
-                    TpmHandle transient = _tpm.Load(primary, priv, pub);
-                    _tpm.FlushContext(transient);
-                    return true;
-                }
-                finally { _tpm.FlushContext(primary); }
-            }
-            catch { return false; }
-        }
-
-        private (byte[] pubBlob, byte[] privBlob) CreateAndSaveAesKeyBlobs(
-            string configDir, string pubFile, string privFile)
-        {
+            // One CreatePrimary — the only one we ever do per process.
             TpmHandle primary = CreateStoragePrimary();
             try
             {
+                if (File.Exists(pubFile) && File.Exists(privFile))
+                {
+                    byte[] pubBytes  = File.ReadAllBytes(pubFile);
+                    byte[] privBytes = File.ReadAllBytes(privFile);
+
+                    try
+                    {
+                        var pub  = Marshaller.FromTpmRepresentation<TpmPublic>(pubBytes);
+                        var priv = Marshaller.FromTpmRepresentation<TpmPrivate>(privBytes);
+                        TpmHandle transient = _tpm.Load(primary, priv, pub);
+                        // Successfully loaded — return immediately (primary flushed in finally).
+                        return (pubBytes, transient);
+                    }
+                    catch
+                    {
+                        // Blobs invalid (different TPM / re-provisioned) — fall through to re-create.
+                    }
+                }
+
+                // First-time or invalid blobs: create a new AES key under the same primary.
                 TpmPrivate aesPriv = _tpm.Create(
                     primary,
                     new SensitiveCreate(),
@@ -233,34 +203,23 @@ namespace Synccl.Cli.Security
                     out TpmPublic aesPub,
                     out _, out _, out _);
 
-                byte[] pubBlob  = aesPub.GetTpmRepresentation();
-                byte[] privBlob = aesPriv.GetTpmRepresentation();
+                byte[] newPubBlob  = aesPub.GetTpmRepresentation();
+                byte[] newPrivBlob = aesPriv.GetTpmRepresentation();
 
                 Directory.CreateDirectory(configDir);
-                File.WriteAllBytes(pubFile,  pubBlob);
-                File.WriteAllBytes(privFile, privBlob);
+                File.WriteAllBytes(pubFile,  newPubBlob);
+                File.WriteAllBytes(privFile, newPrivBlob);
 
-                return (pubBlob, privBlob);
-            }
-            finally { _tpm.FlushContext(primary); }
-        }
+                TpmHandle newTransient = _tpm.Load(
+                    primary,
+                    Marshaller.FromTpmRepresentation<TpmPrivate>(newPrivBlob),
+                    Marshaller.FromTpmRepresentation<TpmPublic>(newPubBlob));
 
-        /// <summary>
-        /// Recreates the deterministic storage primary and loads the AES-256 key as
-        /// a transient object.  Caller is responsible for calling FlushContext when done.
-        /// </summary>
-        private TpmHandle LoadTransientAesKey()
-        {
-            TpmHandle primary = CreateStoragePrimary();
-            try
-            {
-                var pub  = Marshaller.FromTpmRepresentation<TpmPublic>(_aesPublicBlob);
-                var priv = Marshaller.FromTpmRepresentation<TpmPrivate>(_aesPrivateBlob);
-                return _tpm.Load(primary, priv, pub);
+                return (newPubBlob, newTransient);
             }
             finally
             {
-                // Primary is only needed to authorise Load; flush immediately.
+                // Primary only needed for Load/Create; flush now.
                 try { _tpm.FlushContext(primary); } catch { }
             }
         }
@@ -303,6 +262,7 @@ namespace Synccl.Cli.Security
         {
             if (_disposed) return;
             _disposed = true;
+            try { _tpm.FlushContext(_transientAesKey); } catch { }
             try { _tpm?.Dispose(); } catch { }
             try { _device?.Dispose(); } catch { }
         }
