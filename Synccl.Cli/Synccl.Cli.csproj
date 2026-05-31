@@ -19,21 +19,6 @@
 		<PackageReference Include="YamlDotNet" Version="18.0.0" />
 	</ItemGroup>
 
-	<!-- WINDOWS (matches ANY Windows RID) -->
-	<ItemGroup Condition="$(RuntimeIdentifier.Contains('win'))">
-		<Compile Include="Keychain/WindowsKeychain.cs" />
-	</ItemGroup>
-
-	<!-- LINUX (matches ANY Linux RID) -->
-	<ItemGroup Condition="$(RuntimeIdentifier.Contains('linux'))">
-		<Compile Include="Keychain/LinuxKeychain.cs" />
-	</ItemGroup>
-
-	<!-- MACOS (matches both x64 + arm64) -->
-	<ItemGroup Condition="$(RuntimeIdentifier.Contains('osx'))">
-		<Compile Include="Keychain/MacKeychain.cs" />
-	</ItemGroup>
-
 	<ItemGroup>
 		<ProjectReference Include="..\Synccl.Core\Synccl.Core.csproj" />
 	</ItemGroup>
@@ -42,11 +27,10 @@
 
 	<!-- Include native macOS Secure Enclave bridge when building for macOS -->
 	<ItemGroup Condition="$(RuntimeIdentifier.Contains('osx'))">
-		<NativeLibrary Include="runtimes/$(RuntimeIdentifier)/native/libSecureEnclaveBridge.dylib" />
-		<None Update="runtimes/$(RuntimeIdentifier)/native/libSecureEnclaveBridge.dylib">
+		<NativeLibrary Include="Runtimes/$(RuntimeIdentifier)/libSecureEnclaveBridge.dylib" />
+		<None Update="Runtimes/$(RuntimeIdentifier)/libSecureEnclaveBridge.dylib">
 			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
 			<Pack>true</Pack>
 		</None>
 	</ItemGroup>
-
 </Project>
