@@ -57,7 +57,7 @@ app.Configure(config =>
             .WithDescription("Remove a namespace from a vault");
         ns.AddCommand<ListNamespacesCommand>("list").WithAlias("ls")
             .WithDescription("List namespaces in a vault");
-    });
+    }).WithAlias("ns");
 
     // ---- Bulk operations ----
     config.AddCommand<DiffCommand>("diff")
@@ -89,7 +89,7 @@ app.Configure(config =>
             .WithDescription("Rotate a namespace key");
         rotate.AddCommand<RotateItemKeyCommand>("key")
             .WithDescription("Rotate an item key");
-    });
+    }).WithAlias("rot");
 });
 
 return app.Run(args);
