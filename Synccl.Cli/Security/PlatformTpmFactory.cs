@@ -1,6 +1,4 @@
 using Synccl.Core.Interfaces.Security;
-using Synccl.Core.Security;
-using System.Runtime.InteropServices;
 
 namespace Synccl.Cli.Security
 {
@@ -8,7 +6,10 @@ namespace Synccl.Cli.Security
     /// Creates the correct ITPMKeyWrapper + ITPMManager pair for the current platform:
     ///   Windows / Linux  →  TpmKeyWrapper + TpmManager  (TPM 2.0 via Microsoft.TSS)
     ///   macOS            →  MacSecureEnclaveKeyWrapper + MacSecureEnclaveManager
-    ///   Other            →  NoOpTpmKeyWrapper + NoOpTpmManager  (software fallback)
+    ///
+    /// There is no software fallback. A vault's protection is its hardware binding, so
+    /// without a TPM or Secure Enclave synccl refuses to run rather than seal vaults with
+    /// a key an attacker could derive.
     /// </summary>
     public static class PlatformTpmFactory
     {
@@ -24,13 +25,14 @@ namespace Synccl.Cli.Security
                 }
                 catch (Exception ex)
                 {
-                    // TPM not available or not accessible — fall through to software stub.
-                    Console.Error.WriteLine(
-                        $"[synccl] Warning: TPM unavailable ({ex.Message}). " +
-                        "Falling back to software key protection.");
+                    throw new PlatformNotSupportedException(
+                        $"TPM 2.0 is unavailable ({ex.Message}). synccl requires a TPM to protect vaults " +
+                        "and will not run without one. On Linux, check that /dev/tpmrm0 (or /dev/tpm0) exists and that " +
+                        "your user can access it (usually via the 'tss' group).", ex);
                 }
             }
-            else if (OperatingSystem.IsMacOS())
+
+            if (OperatingSystem.IsMacOS())
             {
                 try
                 {
@@ -40,14 +42,15 @@ namespace Synccl.Cli.Security
                 }
                 catch (Exception ex)
                 {
-                    Console.Error.WriteLine(
-                        $"[synccl] Warning: Secure Enclave unavailable ({ex.Message}). " +
-                        "Falling back to software key protection.");
+                    throw new PlatformNotSupportedException(
+                        $"The Secure Enclave is unavailable ({ex.Message}). synccl requires it to protect " +
+                        "vaults and will not run without it.", ex);
                 }
             }
 
-            // Software fallback (DPAPI / machine-scoped AES-GCM).
-            return (new NoOpTpmKeyWrapper(), new NoOpTpmManager());
+            throw new PlatformNotSupportedException(
+                "synccl requires a TPM 2.0 (Windows, Linux) or the Secure Enclave (macOS) and does not " +
+                "support this platform.");
         }
     }
 }
